@@ -76,12 +76,18 @@ Devvit.addTrigger({
         }
       }
 
+      let isUser = false;
       let modlogLinkDesc = "View Admin Modlog";
       let modlogLink = `https://www.reddit.com/r/${subreddit.name}/about/log?mod=a&moderatorNames=a`;
+      if (moderator.name != "Anti-Evil Operations" && moderator.name != "Reddit Legal") {
+        isUser = true;
+        modlogLinkDesc = "View User Modlog";
+        modlogLink = `https://www.reddit.com/r/${subreddit.name}/about/log?mod=${moderator.name}&moderatorNames=${moderator.name}`;
+      }
 
       // Send Modmail
       if (settings.sendModmail) {
-        const msg = `**${moderator.name}** has performed an action in r/${subreddit.name}:\n\n` +
+        const msg = `**${ isUser ? "u/" : "" }${moderator.name}** has performed an action in r/${subreddit.name}:\n\n` +
                     `* **Action:** \`${action}\`` +
                     (link ? `\n\n* **Permalink:** ${link}` : "") +
                     (user ? `\n\n* **Target User:** u/${user}` : "") +
@@ -108,7 +114,7 @@ Devvit.addTrigger({
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `*${moderator.name}* has performed an action in r/${subreddit.name}:`
+                text: `*${ isUser ? "u/" : "" }${moderator.name}* has performed an action in r/${subreddit.name}:`
               }
             },
             {
@@ -158,7 +164,7 @@ Devvit.addTrigger({
       if (settings.webhookURL && settings.webhookURL.startsWith("https://discord.com/api/webhooks/")) {
         const discordPayload = {
           username: "Admin Tattler",
-          content: `**${moderator.name}** has performed an action in r/${subreddit.name}`,
+          content: `**${ isUser ? "u/" : "" }${moderator.name}** has performed an action in r/${subreddit.name}`,
           embeds: [
             {
               color: 16711680, // #FF0000
