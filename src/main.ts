@@ -1,9 +1,10 @@
-import { Devvit } from '@devvit/public-api';
+import { Devvit, TriggerContext } from '@devvit/public-api';
 import { settings, getValidatedSettings } from './settings.js';
 
 Devvit.configure({
   redditAPI: true,
-  http: true
+  http: true,
+  redis: true
 });
 
 Devvit.addSettings(settings);
@@ -11,6 +12,7 @@ Devvit.addSettings(settings);
 Devvit.addTrigger({
   event: 'ModAction',
   onEvent: async (event, context) => {
+
     const action = event.action;
     if (!action) {
       throw new Error('Missing `action` from ModActionTrigger event');
@@ -24,6 +26,15 @@ Devvit.addTrigger({
     const subreddit = event.subreddit;
     if (!subreddit || !subreddit.name) {
       throw new Error('Missing `subreddit` from ModActionTrigger event');
+    }
+
+    // Update cached modlist on modlist change
+    if (
+      action == "acceptmoderatorinvite" || action == "addmoderator" ||
+      action == "removemoderator" || action == "reordermoderators"
+    ) {
+      console.log(`Updating cached modlist on ${action}`);
+      await refreshModerators(context);
     }
 
     const settings = await getValidatedSettings(context);
@@ -224,5 +235,39 @@ Devvit.addTrigger({
     }
   }
 });
+
+// Cache modlist during app install or upgrade
+Devvit.addTrigger({
+  events: ['AppInstall', 'AppUpgrade'],
+  onEvent: async (event, context) => {
+    console.log(`Updating cached modlist on ${event.type}`);
+    await refreshModerators(context);
+  }
+});
+
+/**
+ * Refresh cached subreddit modlist
+ * @param context A TriggerContext object
+ */
+async function refreshModerators(context: TriggerContext) {
+  const subreddit = await context.reddit.getCurrentSubreddit();
+  const moderators: string[] = [];
+  try {
+    for await(const moderator of subreddit.getModerators({ pageSize: 500 })) {
+      moderators.push(moderator.username);
+    }
+  } catch (err) {
+    throw new Error(`Error fetching modlist for r/${subreddit.name}: ${err}`);
+  }
+
+  if (!moderators.length) {
+    throw new Error(`Fetched modlist for r/${subreddit.name} is empty, skipping cache update`);
+  }
+
+  await context.redis
+    .set("mods", moderators.toString())
+    .then(() => console.log(`Wrote ${moderators.length} moderators to Redis`))
+    .catch((e) => console.error('Error writing moderators to Redis', e));
+}
 
 export default Devvit;
