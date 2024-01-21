@@ -44,7 +44,10 @@ Devvit.addTrigger({
 
     // Check if acting moderator is NOT in modlist
     const moderators = await getModerators(context);
-    if (!moderators.includes(moderatorName)) {
+    if (
+      !moderators.includes(moderatorName) && 
+      moderatorName != "AutoModerator" && moderatorName != "reddit"
+    ) {
 
       console.log(`Detected ${action} by ${moderatorName}`);
 
