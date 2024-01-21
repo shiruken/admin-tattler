@@ -44,7 +44,7 @@ Devvit.addTrigger({
 
     // Check if acting moderator is NOT in modlist
     const moderators = await getModerators(context);
-    if (!moderators.includes(moderatorName) || moderatorName == "shiruken") {
+    if (!moderators.includes(moderatorName)) {
 
       let link = "";
       let user = "";
