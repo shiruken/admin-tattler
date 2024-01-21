@@ -46,6 +46,8 @@ Devvit.addTrigger({
     const moderators = await getModerators(context);
     if (!moderators.includes(moderatorName)) {
 
+      console.log(`Detected ${action} by ${moderatorName}`);
+
       let link = "";
       let user = "";
       let title = "";
