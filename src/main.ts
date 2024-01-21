@@ -1,5 +1,6 @@
-import { Devvit, TriggerContext } from '@devvit/public-api';
+import { Devvit } from '@devvit/public-api';
 import { settings, getValidatedSettings } from './settings.js';
+import { getModerators, refreshModerators } from './storage.js';
 
 Devvit.configure({
   redditAPI: true,
@@ -244,44 +245,5 @@ Devvit.addTrigger({
     await refreshModerators(context);
   }
 });
-
-/**
- * Refresh cached subreddit modlist
- * Write string representation of array to Redis
- * @param context A TriggerContext object
- */
-async function refreshModerators(context: TriggerContext) {
-  const subreddit = await context.reddit.getCurrentSubreddit();
-  const moderators: string[] = [];
-  try {
-    for await(const moderator of subreddit.getModerators({ pageSize: 500 })) {
-      moderators.push(moderator.username);
-    }
-  } catch (err) {
-    throw new Error(`Error fetching modlist for r/${subreddit.name}: ${err}`);
-  }
-
-  if (!moderators.length) {
-    throw new Error(`Fetched modlist for r/${subreddit.name} is empty, skipping cache update`);
-  }
-
-  await context.redis
-    .set("mods", moderators.toString())
-    .then(() => console.log(`Wrote ${moderators.length} moderators to Redis`))
-    .catch((e) => console.error('Error writing moderators to Redis', e));
-}
-
-/**
- * Get array of cached moderator usernames from Redis
- * @param context A TriggerContext object
- * @returns A promise that resolves to an array of moderator usernames
- */
-async function getModerators(context: TriggerContext): Promise<string[]> {
-  const moderators = await context.redis.get("mods");
-  if (!moderators) {
-    throw new Error('Cached modlist is empty');
-  }
-  return moderators.split(",");
-}
 
 export default Devvit;
