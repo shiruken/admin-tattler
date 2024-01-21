@@ -28,6 +28,8 @@ Devvit.addTrigger({
       throw new Error('Missing `subreddit` from ModActionTrigger event');
     }
 
+    const settings = await getValidatedSettings(context);
+
     // Update cached modlist on modlist change
     if (
       action == "acceptmoderatorinvite" || action == "addmoderator" ||
@@ -37,13 +39,9 @@ Devvit.addTrigger({
       await refreshModerators(context);
     }
 
-    const settings = await getValidatedSettings(context);
-
-    if (
-      (moderator.name == "Anti-Evil Operations" && settings.reportAEO) ||
-      (moderator.name == "Reddit Legal" && settings.reportLegal) ||
-      (moderator.name == "ModCodeofConduct" && settings.reportMCoC)
-    ) {
+    // Check if acting moderator is NOT in modlist
+    const moderators = await getModerators(context);
+    if (!moderators.includes(moderator.name) || moderator.name == "shiruken") {
 
       let link = "";
       let user = "";
@@ -247,6 +245,7 @@ Devvit.addTrigger({
 
 /**
  * Refresh cached subreddit modlist
+ * Write string representation of array to Redis
  * @param context A TriggerContext object
  */
 async function refreshModerators(context: TriggerContext) {
@@ -268,6 +267,19 @@ async function refreshModerators(context: TriggerContext) {
     .set("mods", moderators.toString())
     .then(() => console.log(`Wrote ${moderators.length} moderators to Redis`))
     .catch((e) => console.error('Error writing moderators to Redis', e));
+}
+
+/**
+ * Get array of cached moderator usernames from Redis
+ * @param context A TriggerContext object
+ * @returns A promise that resolves to an array of moderator usernames
+ */
+async function getModerators(context: TriggerContext): Promise<string[]> {
+  const moderators = await context.redis.get("mods");
+  if (!moderators) {
+    throw new Error('Cached modlist is empty');
+  }
+  return moderators.split(",");
 }
 
 export default Devvit;

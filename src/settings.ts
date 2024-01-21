@@ -2,42 +2,15 @@ import { SettingsFormField, SettingsFormFieldValidatorEvent, TriggerContext } fr
 
 /**
  * Settings
- * @typeParam reportAEO: Enable Anti-Evil Operations reporting
- * @typeParam reportLegal: Enable Reddit Legal reporting
- * @typeParam reportMCoC: Enable u/ModCodeofConduct reporting
  * @typeParam sendModmail: Enable reports via Modmail
  * @typeParam webhookURL: Slack or Discord webhook URL
  */
 export type Settings = {
-  reportAEO: boolean,
-  reportLegal: boolean,
-  reportMCoC: boolean,
   sendModmail: boolean,
   webhookURL: string
 };
 
 export const settings: SettingsFormField[] = [
-  {
-    type: 'boolean',
-    name: 'reportAEO',
-    label: 'Report Anti-Evil Operations',
-    helpText: 'Report actions by Anti-Evil Operations',
-    defaultValue: true
-  },
-  {
-    type: 'boolean',
-    name: 'reportLegal',
-    label: 'Report Reddit Legal',
-    helpText: 'Report actions by Reddit Legal',
-    defaultValue: true
-  },
-  {
-    type: 'boolean',
-    name: 'reportMCoC',
-    label: 'Report u/ModCodeofConduct',
-    helpText: 'Report actions by u/ModCodeofConduct',
-    defaultValue: true
-  },
   {
     type: 'boolean',
     name: 'sendModmail',
@@ -78,9 +51,6 @@ function validateWebhookURL(event: SettingsFormFieldValidatorEvent<string>): voi
  */
 export async function getValidatedSettings(context: TriggerContext): Promise<Settings> {
   const settings = await context.settings.getAll() as Settings;
-  if (!settings.reportAEO && !settings.reportLegal && !settings.reportMCoC) {
-    throw new Error('All admin accounts are disabled in app configuration');
-  }
   if (!settings.sendModmail && !settings.webhookURL) {
     throw new Error('All reporting routes are disabled in app configuration');
   }
