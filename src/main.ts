@@ -63,31 +63,34 @@ Devvit.addTrigger({
       let body = "";
 
       // Posts
-      if (event.targetPost && event.targetPost.id) {
-        if (event.targetPost.permalink) {
-          link = `https://www.reddit.com${event.targetPost.permalink}`;
+      const targetPost = event.targetPost;
+      if (targetPost && targetPost.id) {
+        if (targetPost.permalink) {
+          link = `https://www.reddit.com${targetPost.permalink}`;
         }
-        if (event.targetPost.title) {
-          title = event.targetPost.title;
+        if (targetPost.title) {
+          title = targetPost.title;
         }
-        if (event.targetPost.selftext) {
-          body = event.targetPost.selftext;
+        if (targetPost.selftext) {
+          body = targetPost.selftext;
         }
       }
 
       // Comments
-      if (event.targetComment && event.targetComment.id) {
-        if (event.targetComment.permalink) {
-          link = `https://www.reddit.com${event.targetComment.permalink}`;
+      const targetComment = event.targetComment;
+      if (targetComment && targetComment.id) {
+        if (targetComment.permalink) {
+          link = `https://www.reddit.com${targetComment.permalink}`;
         }
-        if (event.targetComment.body) {
-          body = event.targetComment.body;
+        if (targetComment.body) {
+          body = targetComment.body;
         }
       }
 
       // Target User
-      if (event.targetUser && event.targetUser.id) {
-        user = event.targetUser.name;
+      const targetUser = event.targetUser;
+      if (targetUser && targetUser.id) {
+        user = targetUser.name;
       }
 
       let isUser = false;
