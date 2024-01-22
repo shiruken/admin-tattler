@@ -38,7 +38,7 @@ Devvit.addTrigger({
       action == "acceptmoderatorinvite" || action == "addmoderator" ||
       action == "removemoderator" || action == "reordermoderators"
     ) {
-      console.log(`Updating cached modlist on ${action}`);
+      console.log(`Updating cached modlist on ${action} by ${moderatorName}`);
       await refreshModerators(context);
     }
 
@@ -48,6 +48,12 @@ Devvit.addTrigger({
       !moderators.includes(moderatorName) && 
       moderatorName != "AutoModerator" && moderatorName != "reddit"
     ) {
+
+      // Ignore user removing themselves as moderator
+      if (action == "removemoderator" && moderatorName == event.targetUser!.name) {
+        console.log(`Ignored ${action} by ${moderatorName}`);
+        return;
+      }
 
       console.log(`Detected ${action} by ${moderatorName}`);
 
