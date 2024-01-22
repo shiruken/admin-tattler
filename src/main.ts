@@ -34,9 +34,10 @@ Devvit.addTrigger({
     const settings = await getValidatedSettings(context);
 
     // Update cached modlist on modlist change
-    const modlistActions = ["acceptmoderatorinvite", "addmoderator", 
-                            "removemoderator", "reordermoderators"];
-    if (modlistActions.includes(action)) {
+    if (
+      action == "acceptmoderatorinvite" || action == "addmoderator" ||
+      action == "removemoderator" || action == "reordermoderators"
+    ) {
       console.log(`Updating cached modlist on ${action} by ${moderatorName}`);
       await refreshModerators(context);
     }
@@ -62,48 +63,31 @@ Devvit.addTrigger({
       let body = "";
 
       // Posts
-      const postActions = ["approvelink", "removelink", "spamlink"];
-      if (postActions.includes(action)) {
-        const post = event.targetPost;
-        if (post) {
-          if (post.permalink) {
-            link = `https://www.reddit.com${post.permalink}`;
-          }
-          if (post.authorId) {
-            user = (await context.reddit.getUserById(post.authorId)).username;
-          }
-          if (post.title) {
-            title = post.title;
-          }
-          if (post.selftext) {
-            body = post.selftext;
-          }
+      if (event.targetPost && event.targetPost.id) {
+        if (event.targetPost.permalink) {
+          link = `https://www.reddit.com${event.targetPost.permalink}`;
+        }
+        if (event.targetPost.title) {
+          title = event.targetPost.title;
+        }
+        if (event.targetPost.selftext) {
+          body = event.targetPost.selftext;
         }
       }
 
       // Comments
-      const commentActions = ["approvecomment", "removecomment", "spamcomment"];
-      if (commentActions.includes(action)) {
-        const comment = event.targetComment;
-        if (comment) {
-          if (comment.permalink) {
-            link = `https://www.reddit.com${comment.permalink}`;
-          }
-          if (comment.author) {
-            user = (await context.reddit.getUserById(comment.author)).username;
-          }
-          if (comment.body) {
-            body = comment.body;
-          }
+      if (event.targetComment && event.targetComment.id) {
+        if (event.targetComment.permalink) {
+          link = `https://www.reddit.com${event.targetComment.permalink}`;
+        }
+        if (event.targetComment.body) {
+          body = event.targetComment.body;
         }
       }
 
-      // Modlist Changes
-      modlistActions.push("invitemoderator", "uninvitemoderator");
-      if (modlistActions.includes(action)) {
-        if (event.targetUser) {
-          user = event.targetUser.name;
-        }
+      // Target User
+      if (event.targetUser && event.targetUser.id) {
+        user = event.targetUser.name;
       }
 
       let isUser = false;
