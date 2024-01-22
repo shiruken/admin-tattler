@@ -34,10 +34,9 @@ Devvit.addTrigger({
     const settings = await getValidatedSettings(context);
 
     // Update cached modlist on modlist change
-    if (
-      action == "acceptmoderatorinvite" || action == "addmoderator" ||
-      action == "removemoderator" || action == "reordermoderators"
-    ) {
+    const modlistActions = ["acceptmoderatorinvite", "addmoderator", 
+                            "removemoderator", "reordermoderators"];
+    if (modlistActions.includes(action)) {
       console.log(`Updating cached modlist on ${action} by ${moderatorName}`);
       await refreshModerators(context);
     }
@@ -96,6 +95,14 @@ Devvit.addTrigger({
           if (comment.body) {
             body = comment.body;
           }
+        }
+      }
+
+      // Modlist Changes
+      modlistActions.push("invitemoderator", "uninvitemoderator");
+      if (modlistActions.includes(action)) {
+        if (event.targetUser) {
+          user = event.targetUser.name;
         }
       }
 
