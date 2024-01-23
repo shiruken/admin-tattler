@@ -5,7 +5,7 @@ import { SettingsFormField, SettingsFormFieldValidatorEvent, TriggerContext } fr
  * @typeParam sendModmail: Enable reports via Modmail
  * @typeParam webhookURL: Slack or Discord webhook URL
  */
-export type Settings = {
+export interface Settings {
   sendModmail: boolean,
   webhookURL: string
 };

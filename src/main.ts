@@ -1,6 +1,6 @@
 import { Devvit } from '@devvit/public-api';
 import { settings, getValidatedSettings } from './settings.js';
-import { cacheComment, getCachedComment, getModerators, refreshModerators } from './storage.js';
+import { cacheComment, cachePost, getCachedComment, getCachedPost, getModerators, refreshModerators } from './storage.js';
 
 Devvit.configure({
   redditAPI: true,
@@ -65,30 +65,35 @@ Devvit.addTrigger({
       // Posts
       const targetPost = event.targetPost;
       if (targetPost && targetPost.id) {
+        const cachedPost = await getCachedPost(targetPost.id, context);
         if (targetPost.permalink) {
           link = `https://www.reddit.com${targetPost.permalink}`;
         }
         if (targetPost.title) {
           title = targetPost.title;
+          if (title == "[ Removed by Reddit ]" && cachedPost && cachedPost.title) {
+            title = cachedPost.title;
+          }
         }
         if (targetPost.selftext) {
           body = targetPost.selftext;
+          if (title == "[ Removed by Reddit ]" && cachedPost && cachedPost.body) {
+            body = cachedPost.body;
+          }
         }
       }
 
       // Comments
       const targetComment = event.targetComment;
       if (targetComment && targetComment.id) {
+        const cachedComment = await getCachedComment(targetComment.id, context);
         if (targetComment.permalink) {
           link = `https://www.reddit.com${targetComment.permalink}`;
         }
         if (targetComment.body) {
           body = targetComment.body;
-          if (body == "[ Removed by Reddit ]") {
-            const cachedComment = await getCachedComment(targetComment.id, context);
-            if (cachedComment) {
-              body = cachedComment;
-            }
+          if (body == "[ Removed by Reddit ]" && cachedComment) {
+            body = cachedComment;
           }
         }
       }
@@ -257,10 +262,16 @@ Devvit.addTrigger({
   }
 });
 
+// Cache text of new and edited posts
+Devvit.addTrigger({
+  events: ['PostSubmit', 'PostUpdate'],
+  onEvent: cachePost
+});
+
 // Cache text of new and edited comments
 Devvit.addTrigger({
   events: ['CommentSubmit', 'CommentUpdate'],
   onEvent: cacheComment
-})
+});
 
 export default Devvit;

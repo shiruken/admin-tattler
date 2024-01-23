@@ -1,5 +1,5 @@
 import { OnTriggerEvent, TriggerContext } from "@devvit/public-api";
-import { CommentSubmit, CommentUpdate } from '@devvit/protos';
+import { CommentSubmit, CommentUpdate, PostSubmit, PostUpdate } from '@devvit/protos';
 
 /**
  * Get array of cached moderator usernames from Redis
@@ -41,6 +41,48 @@ export async function refreshModerators(context: TriggerContext) {
 }
 
 /**
+ * CachedPostData
+ * @typeParam title: Post title text
+ * @typeParam body: Post body text
+ */
+interface CachedPostData {
+  title: string,
+  body: string
+};
+
+/**
+ * Cache post text
+ * @param event An OnTriggerEvent object
+ * @param context A TriggerContext object
+ */
+export async function cachePost(event: OnTriggerEvent<PostSubmit | PostUpdate>, context: TriggerContext) {
+  const post = event.post;
+  if (post && post.title) {
+    const data: CachedPostData = {
+      title: post.title,
+      body: post.selftext
+    };
+    await context.redis.set(post.id, JSON.stringify(data));
+    await context.redis.expire(post.id, 60*60*24*14); // 14 days
+  }
+}
+
+/**
+ * Get cached post text
+ * @param comment_id A post thing id (including t3_ prefix)
+ * @param context A TriggerContext object
+ * @returns A Promise that resolves to a {@link CachedPostData} object containing the cached post text
+ */
+export async function getCachedPost(post_id: string, context: TriggerContext): Promise<CachedPostData | undefined> {
+  const value = await context.redis.get(post_id);
+  let cachedPost: CachedPostData | undefined = undefined;
+  if (value) {
+    cachedPost = JSON.parse(value);
+  }
+  return cachedPost;
+}
+
+/**
  * Cache comment text
  * @param event An OnTriggerEvent object
  * @param context A TriggerContext object
@@ -55,9 +97,11 @@ export async function cacheComment(event: OnTriggerEvent<CommentSubmit | Comment
 
 /**
  * Get cached comment text
- * @param comment_id Comment thing id (including t1_ prefix)
+ * @param comment_id A comment thing id (including t1_ prefix)
  * @param context A TriggerContext object
+ * @returns A Promise that resolves to the cached comment text
  */
 export async function getCachedComment(comment_id: string, context: TriggerContext): Promise<string | undefined> {
-  return await context.redis.get(comment_id);
+  const cachedComment = await context.redis.get(comment_id);
+  return cachedComment;
 }
