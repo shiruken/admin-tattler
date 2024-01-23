@@ -1,6 +1,6 @@
 import { Devvit } from '@devvit/public-api';
 import { settings, getValidatedSettings } from './settings.js';
-import { getModerators, refreshModerators } from './storage.js';
+import { cacheComment, getCachedComment, getModerators, refreshModerators } from './storage.js';
 
 Devvit.configure({
   redditAPI: true,
@@ -84,6 +84,12 @@ Devvit.addTrigger({
         }
         if (targetComment.body) {
           body = targetComment.body;
+          if (body == "[ Removed by Reddit ]") {
+            const cachedComment = await getCachedComment(targetComment.id, context);
+            if (cachedComment) {
+              body = cachedComment;
+            }
+          }
         }
       }
 
@@ -250,5 +256,11 @@ Devvit.addTrigger({
     await refreshModerators(context);
   }
 });
+
+// Cache text of new and edited comments
+Devvit.addTrigger({
+  events: ['CommentSubmit', 'CommentUpdate'],
+  onEvent: cacheComment
+})
 
 export default Devvit;

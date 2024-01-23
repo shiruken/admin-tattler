@@ -1,4 +1,5 @@
-import { TriggerContext } from "@devvit/public-api";
+import { OnTriggerEvent, TriggerContext } from "@devvit/public-api";
+import { CommentSubmit, CommentUpdate } from '@devvit/protos';
 
 /**
  * Get array of cached moderator usernames from Redis
@@ -37,4 +38,26 @@ export async function refreshModerators(context: TriggerContext) {
     .set("mods", moderators.toString())
     .then(() => console.log(`Wrote ${moderators.length} moderators to Redis`))
     .catch((e) => console.error('Error writing moderators to Redis', e));
+}
+
+/**
+ * Cache comment text
+ * @param event An OnTriggerEvent object
+ * @param context A TriggerContext object
+ */
+export async function cacheComment(event: OnTriggerEvent<CommentSubmit | CommentUpdate>, context: TriggerContext) {
+  const comment = event.comment;
+  if (comment && comment.body) {
+    await context.redis.set(comment.id, comment.body);
+    await context.redis.expire(comment.id, 60*60*24*14); // 14 days
+  }
+}
+
+/**
+ * Get cached comment text
+ * @param comment_id Comment thing id (including t1_ prefix)
+ * @param context A TriggerContext object
+ */
+export async function getCachedComment(comment_id: string, context: TriggerContext): Promise<string | undefined> {
+  return await context.redis.get(comment_id);
 }
