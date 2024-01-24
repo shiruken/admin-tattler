@@ -44,10 +44,12 @@ export async function getCachedModerators(context: TriggerContext): Promise<stri
  * CachedPostData
  * @typeParam title: Post title text
  * @typeParam body: Post body text
+ * @typeParam body: Post url
  */
 interface CachedPostData {
   title: string,
-  body: string
+  body: string,
+  url: string
 };
 
 /**
@@ -60,7 +62,8 @@ export async function cachePost(event: OnTriggerEvent<PostSubmit | PostUpdate>, 
   if (post && post.title) {
     const data: CachedPostData = {
       title: post.title,
-      body: post.selftext
+      body: post.selftext,
+      url: post.url
     };
     await context.redis.set(post.id, JSON.stringify(data));
     await context.redis.expire(post.id, 60*60*24*14); // 14 days

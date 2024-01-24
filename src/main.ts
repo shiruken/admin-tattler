@@ -62,8 +62,10 @@ Devvit.addTrigger({
       let url = "";
       let title = "";
       let body = "";
+      
       let usedCachedTitle = false;
       let usedCachedBody = false;
+      let usedCachedURL = false;
 
       // Posts
       const targetPost = event.targetPost;
@@ -71,7 +73,7 @@ Devvit.addTrigger({
         if (targetPost.permalink) {
           permalink = `https://www.reddit.com${targetPost.permalink}`;
         }
-        if (targetPost.url && !targetPost.isSelf) {
+        if (targetPost.url && !targetPost.url.includes(targetPost.id.slice(3))) {
           url = targetPost.url;
         }
         if (targetPost.selftext) {
@@ -85,6 +87,10 @@ Devvit.addTrigger({
               if (cachedPost.title) {
                 title = cachedPost.title;
                 usedCachedTitle = true;
+              }
+              if (cachedPost.url && !cachedPost.url.includes(targetPost.id.slice(3))) {
+                url = cachedPost.url;
+                usedCachedURL = true;
               }
               if (cachedPost.body) {
                 body = cachedPost.body;
@@ -134,7 +140,7 @@ Devvit.addTrigger({
                     `* **Action:** \`${action}\`` +
                     (permalink ? `\n\n* **Permalink:** ${permalink}` : "") +
                     (user ? `\n\n* **Target User:** u/${user}` : "") +
-                    (url ? `\n\n* **URL:** ${url}` : "") +
+                    (url ? `\n\n* **URL${ usedCachedURL ? " (Cached)" : "" }:** ${url}` : "") +
                     (title ? `\n\n* **Title${ usedCachedTitle ? " (Cached)" : "" }:** ${title}` : "") +
                     (body ? `\n\n* **Body${ usedCachedBody ? " (Cached)" : "" }:** ${body}` : "") +
                     `\n\n[**${modlogLinkDesc}**](${modlogLink})\n\n` +
@@ -169,7 +175,7 @@ Devvit.addTrigger({
                   text: `*Action:* \`${action}\`` +
                         (permalink ? `\n*Permalink:* ${permalink}` : "") +
                         (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>` : "") +
-                        (url ? `\n*URL:* ${url}` : "") +
+                        (url ? `\n*URL${ usedCachedURL ? " (Cached)" : "" }:* ${url}` : "") +
                         (title ? `\n*Title${ usedCachedTitle ? " (Cached)" : "" }:* ${title}` : "") +
                         (body ? `\n*Body${ usedCachedBody ? " (Cached)" : "" }:* ${body}` : "")
                 }
@@ -239,7 +245,7 @@ Devvit.addTrigger({
 
         if (url) {
           discordPayload.embeds[0].fields.push({
-            name: "URL",
+            name: (usedCachedTitle ? "URL (Cached)" : "URL"),
             value: url
           });
         }
