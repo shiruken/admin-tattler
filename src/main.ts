@@ -212,7 +212,7 @@ Devvit.addTrigger({
           content: `**${ isUser ? "u/" : "" }${moderatorName}** has performed an action in r/${subredditName}`,
           embeds: [
             {
-              color: 16711680, // #FF0000
+              color: 16729344, // #FF4500 (OrangeRed)
               fields: [
                 {
                   name: "Action",
