@@ -57,8 +57,9 @@ Devvit.addTrigger({
 
       console.log(`Detected ${action} by ${moderatorName}`);
 
-      let link = "";
+      let permalink = "";
       let user = "";
+      let url = "";
       let title = "";
       let body = "";
       let usedCachedTitle = false;
@@ -68,14 +69,17 @@ Devvit.addTrigger({
       const targetPost = event.targetPost;
       if (targetPost && targetPost.id) {
         if (targetPost.permalink) {
-          link = `https://www.reddit.com${targetPost.permalink}`;
+          permalink = `https://www.reddit.com${targetPost.permalink}`;
+        }
+        if (targetPost.url && !targetPost.isSelf) {
+          url = targetPost.url;
         }
         if (targetPost.selftext) {
           body = targetPost.selftext;
         }
         if (targetPost.title) {
           title = targetPost.title;
-          if (title == "[ Removed by Reddit ]" || moderatorName == "shiruken") {
+          if (title == "[ Removed by Reddit ]") {
             const cachedPost = await getCachedPost(targetPost.id, context);
             if (cachedPost) {
               if (cachedPost.title) {
@@ -95,7 +99,7 @@ Devvit.addTrigger({
       const targetComment = event.targetComment;
       if (targetComment && targetComment.id) {
         if (targetComment.permalink) {
-          link = `https://www.reddit.com${targetComment.permalink}`;
+          permalink = `https://www.reddit.com${targetComment.permalink}`;
         }
         if (targetComment.body) {
           body = targetComment.body;
@@ -128,8 +132,9 @@ Devvit.addTrigger({
       if (settings.sendModmail) {
         const msg = `**${ isUser ? "u/" : "" }${moderatorName}** has performed an action in r/${subredditName}:\n\n` +
                     `* **Action:** \`${action}\`` +
-                    (link ? `\n\n* **Permalink:** ${link}` : "") +
+                    (permalink ? `\n\n* **Permalink:** ${permalink}` : "") +
                     (user ? `\n\n* **Target User:** u/${user}` : "") +
+                    (url ? `\n\n* **URL:** ${url}` : "") +
                     (title ? `\n\n* **Title${ usedCachedTitle ? " (Cached)" : "" }:** ${title}` : "") +
                     (body ? `\n\n* **Body${ usedCachedBody ? " (Cached)" : "" }:** ${body}` : "") +
                     `\n\n[**${modlogLinkDesc}**](${modlogLink})\n\n` +
@@ -162,8 +167,9 @@ Devvit.addTrigger({
                 {
                   type: "mrkdwn",
                   text: `*Action:* \`${action}\`` +
-                        (link ? `\n*Permalink:* ${link}` : "") +
+                        (permalink ? `\n*Permalink:* ${permalink}` : "") +
                         (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>` : "") +
+                        (url ? `\n*URL:* ${url}` : "") +
                         (title ? `\n*Title${ usedCachedTitle ? " (Cached)" : "" }:* ${title}` : "") +
                         (body ? `\n*Body${ usedCachedBody ? " (Cached)" : "" }:* ${body}` : "")
                 }
@@ -217,10 +223,10 @@ Devvit.addTrigger({
           ]
         };
 
-        if (link) {
+        if (permalink) {
           discordPayload.embeds[0].fields.push({
             name: "Permalink",
-            value: link
+            value: permalink
           });
         }
 
@@ -228,6 +234,13 @@ Devvit.addTrigger({
           discordPayload.embeds[0].fields.push({
             name: "Target User",
             value: `[u/${user}](https://www.reddit.com/user/${user})`
+          });
+        }
+
+        if (url) {
+          discordPayload.embeds[0].fields.push({
+            name: "URL",
+            value: url
           });
         }
 
