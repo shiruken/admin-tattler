@@ -1,6 +1,6 @@
 import { Devvit } from '@devvit/public-api';
 import { settings, getValidatedSettings } from './settings.js';
-import { cacheComment, cachePost, getCachedComment, getCachedPost, getModerators, refreshModerators } from './storage.js';
+import { cacheComment, cacheModerators, cachePost, getCachedComment, getCachedModerators, getCachedPost } from './cache.js';
 
 Devvit.configure({
   redditAPI: true,
@@ -39,11 +39,11 @@ Devvit.addTrigger({
       action == "removemoderator" || action == "reordermoderators"
     ) {
       console.log(`Updating cached modlist on ${action} by ${moderatorName}`);
-      await refreshModerators(context);
+      await cacheModerators(context);
     }
 
     // Check if acting moderator is NOT in modlist
-    const moderators = await getModerators(context);
+    const moderators = await getCachedModerators(context);
     if (
       !moderators.includes(moderatorName) && 
       moderatorName != "AutoModerator" && moderatorName != "reddit"
@@ -282,7 +282,7 @@ Devvit.addTrigger({
   events: ['AppInstall', 'AppUpgrade'],
   onEvent: async (event, context) => {
     console.log(`Updating cached modlist on ${event.type}`);
-    await refreshModerators(context);
+    await cacheModerators(context);
   }
 });
 
