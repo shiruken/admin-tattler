@@ -1,14 +1,5 @@
 import { SettingsFormField, SettingsFormFieldValidatorEvent, TriggerContext } from '@devvit/public-api';
-
-/**
- * Settings
- * @typeParam sendModmail: Enable reports via Modmail
- * @typeParam webhookURL: Slack or Discord webhook URL
- */
-export interface Settings {
-  sendModmail: boolean,
-  webhookURL: string
-};
+import { Settings } from './interfaces.js';
 
 export const settings: SettingsFormField[] = [
   {
