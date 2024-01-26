@@ -29,7 +29,7 @@ https://developers.reddit.com/apps/admin-tattler
 
 ### Discord
 
-![Discord Preview](https://github.com/shiruken/admin-tattler/assets/867617/0f28d0f3-39df-4a81-b4e5-ec49556d6b8a)
+![Discord Preview](https://github.com/shiruken/admin-tattler/assets/867617/d8f45a88-4d05-44c5-882f-75dc716be230)
 
 ## Note
 
