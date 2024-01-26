@@ -160,42 +160,49 @@ export async function checkModAction(event: OnTriggerEvent<ModAction>, context: 
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `*${ isUser ? "u/" : "" }${moderatorName}* has performed an action in r/${subredditName}:`
+              text: `*${ isUser ? "u/" : "" }${moderatorName}* has performed an action in r/${subredditName}`
             }
-          },
+          }
+        ],
+        attachments: [
           {
-            type: "context",
-            elements: [
+            color: "#FF4500", // OrangeRed
+            blocks: [
               {
-                type: "mrkdwn",
-                text: `*Action:* \`${action}\`` +
-                      (permalink ? `\n*Permalink:* ${permalink}` : "") +
-                      (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>` : "") +
-                      (url ? `\n*URL${ usedCachedURL ? " (Cached)" : "" }:* ${url}` : "") +
-                      (title ? `\n*Title${ usedCachedTitle ? " (Cached)" : "" }:* ${title}` : "") +
-                      (body ? `\n*Body${ usedCachedBody ? " (Cached)" : "" }:* ${body}` : "")
-              }
-            ]
-          },
-          {
-            type: "actions",
-            elements: [
+                type: "context",
+                elements: [
+                  {
+                    type: "mrkdwn",
+                    text: `*Action:* \`${action}\`` +
+                          (permalink ? `\n*Permalink:* ${permalink}` : "") +
+                          (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>` : "") +
+                          (url ? `\n*URL${ usedCachedURL ? " (Cached)" : "" }:* ${url}` : "") +
+                          (title ? `\n*Title${ usedCachedTitle ? " (Cached)" : "" }:* ${title}` : "") +
+                          (body ? `\n*Body${ usedCachedBody ? " (Cached)" : "" }:* ${body}` : "")
+                  }
+                ]
+              },
               {
-                type: "button",
-                text: {
-                  type: "plain_text",
-                  text: modlogLinkDesc
-                },
-                url: modlogLink
-              }
+                type: "actions",
+                elements: [
+                  {
+                    type: "button",
+                    text: {
+                      type: "plain_text",
+                      text: modlogLinkDesc
+                    },
+                    url: modlogLink
+                  }
+                ]
+              },
+              // {
+              //   type: "section",
+              //   text: {
+              //     type: "mrkdwn",
+              //     text: `\`\`\`${JSON.stringify(event)}\`\`\``
+              //   }
+              // }
             ]
-          },
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: `\`\`\`${JSON.stringify(event)}\`\`\``
-            }
           }
         ]
       };
