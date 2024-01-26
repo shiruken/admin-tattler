@@ -218,6 +218,7 @@ export async function checkModAction(event: OnTriggerEvent<ModAction>, context: 
     if (settings.webhookURL && settings.webhookURL.startsWith("https://discord.com/api/webhooks/")) {
       const discordPayload = {
         username: "Admin Tattler",
+        avatar_url: "https://raw.githubusercontent.com/shiruken/admin-tattler/main/assets/avatar.jpg",
         content: `**${ isUser ? "u/" : "" }${moderatorName}** has performed an action in r/${subredditName}`,
         embeds: [
           {

@@ -30,3 +30,7 @@ https://developers.reddit.com/apps/admin-tattler
 ### Discord
 
 ![Discord Preview](https://github.com/shiruken/admin-tattler/assets/867617/0f28d0f3-39df-4a81-b4e5-ec49556d6b8a)
+
+## Note
+
+The avatar used in this project [was generated](https://www.bing.com/images/create/reddit-snoo-informant/1-65b3fd4630364e98a5ac66ee3f7ee499?id=dIWuP5X6chNUmVBr6cLJHQ%3D%3D&view=detailv2&idpp=genimg&form=GCRIDP&ajaxhist=0&ajaxserp=0) using Image Creator from Microsoft Designer.
