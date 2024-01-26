@@ -14,5 +14,19 @@ https://developers.reddit.com/apps/admin-tattler
 
 ![Screenshot of App Configuration](https://github.com/shiruken/admin-tattler/assets/867617/83e6326c-0273-4f02-8d86-681bc7cbfa10)
 
-* [Slack Webhooks](https://api.slack.com/messaging/webhooks)
-* [Discord Webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
+* [Slack: Sending messages using Incoming Webhooks](https://api.slack.com/messaging/webhooks)
+* [Discord: Intro to Webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
+
+## Screenshots
+
+### Modmail
+
+![Modmail Preview](https://github.com/shiruken/admin-tattler/assets/867617/ef72b287-83fa-44bf-98fb-28a85adbe07c)
+
+### Slack
+
+![Slack Preview](https://github.com/shiruken/admin-tattler/assets/867617/836a0c74-ee65-41bd-be09-58ac4c2fddcf)
+
+### Discord
+
+![Discord Preview](https://github.com/shiruken/admin-tattler/assets/867617/0f28d0f3-39df-4a81-b4e5-ec49556d6b8a)
