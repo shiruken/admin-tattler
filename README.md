@@ -31,6 +31,11 @@ https://developers.reddit.com/apps/admin-tattler
 
 ![Discord Preview](https://github.com/shiruken/admin-tattler/assets/867617/d8f45a88-4d05-44c5-882f-75dc716be230)
 
-## Note
+## Links
 
-The [avatar](/assets/avatar.jpg) used in this project [was generated](https://www.bing.com/images/create/reddit-snoo-informant/1-65b3fd4630364e98a5ac66ee3f7ee499?id=dIWuP5X6chNUmVBr6cLJHQ%3D%3D&view=detailv2&idpp=genimg&form=GCRIDP&ajaxhist=0&ajaxserp=0) using Image Creator from Microsoft Designer.
+* [Source Code](https://github.com/shiruken/admin-tattler)
+* [Changelog](https://github.com/shiruken/admin-tattler/releases)
+* [Terms and Conditions](https://github.com/shiruken/admin-tattler/blob/main/TERMS.md)
+* [Privacy Policy](https://github.com/shiruken/admin-tattler/blob/main/PRIVACY.md)
+
+_Note: The [avatar](/assets/avatar.jpg) used in this project [was generated](https://www.bing.com/images/create/reddit-snoo-informant/1-65b3fd4630364e98a5ac66ee3f7ee499?id=dIWuP5X6chNUmVBr6cLJHQ%3D%3D&view=detailv2&idpp=genimg&form=GCRIDP&ajaxhist=0&ajaxserp=0) using Image Creator from Microsoft Designer._
