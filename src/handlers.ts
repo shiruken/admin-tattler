@@ -1,14 +1,14 @@
-import { OnTriggerEvent, TriggerContext } from "@devvit/public-api";
+import { TriggerContext } from "@devvit/public-api";
 import { CommentSubmit, CommentUpdate, ModAction, PostSubmit, PostUpdate } from '@devvit/protos';
 import { CachedPostData } from "./interfaces.js";
 import { getValidatedSettings } from "./settings.js";
 
 /**
  * Checks ModAction for Admins
- * @param event An OnTriggerEvent object
+ * @param event A ModAction object
  * @param context A TriggerContext object
  */
-export async function checkModAction(event: OnTriggerEvent<ModAction>, context: TriggerContext) {
+export async function checkModAction(event: ModAction, context: TriggerContext) {
   const action = event.action;
   if (!action) {
     throw new Error('Missing `action` from ModActionTrigger event');
@@ -288,10 +288,10 @@ export async function checkModAction(event: OnTriggerEvent<ModAction>, context: 
 
 /**
  * Cache post text
- * @param event An OnTriggerEvent object
+ * @param event A PostSubmit or PostUpdate object
  * @param context A TriggerContext object
  */
-export async function cachePost(event: OnTriggerEvent<PostSubmit | PostUpdate>, context: TriggerContext) {
+export async function cachePost(event: PostSubmit | PostUpdate, context: TriggerContext) {
   const post = event.post;
   if (post && post.title) {
     const data: CachedPostData = {
@@ -325,10 +325,10 @@ async function getCachedPost(post_id: string, context: TriggerContext): Promise<
 
 /**
  * Cache comment text
- * @param event An OnTriggerEvent object
+ * @param event A CommentSubmit or CommentUpdate object
  * @param context A TriggerContext object
  */
-export async function cacheComment(event: OnTriggerEvent<CommentSubmit | CommentUpdate>, context: TriggerContext) {
+export async function cacheComment(event: CommentSubmit | CommentUpdate, context: TriggerContext) {
   const comment = event.comment;
   if (comment && comment.body) {
     await context.redis
