@@ -123,7 +123,7 @@ export async function checkModAction(event: OnTriggerEvent<ModAction>, context: 
     let isUser = false;
     let modlogLinkDesc = "View Admin Modlog";
     let modlogLink = `https://www.reddit.com/r/${subredditName}/about/log?mod=a&moderatorNames=a`;
-    if (moderatorName != "Anti-Evil Operations" && moderatorName != "Reddit Legal") {
+    if (moderatorName != "Anti-Evil Operations" && moderatorName != "Reddit Legal" && moderatorName != "[ Redacted ]") {
       isUser = true;
       modlogLinkDesc = "View User Modlog";
       modlogLink = `https://www.reddit.com/r/${subredditName}/about/log?mod=${moderatorName}&moderatorNames=${moderatorName}`;
