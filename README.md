@@ -12,7 +12,7 @@ https://developers.reddit.com/apps/admin-tattler
 
 ## Configuration
 
-![Screenshot of App Configuration](https://github.com/shiruken/admin-tattler/assets/867617/83e6326c-0273-4f02-8d86-681bc7cbfa10)
+![Screenshot of App Configuration](https://github.com/shiruken/admin-tattler/assets/867617/6ecedcb0-c53e-489b-82e3-4e4a80e592de)
 
 * [Slack: Sending messages using Incoming Webhooks](https://api.slack.com/messaging/webhooks)
 * [Discord: Intro to Webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
