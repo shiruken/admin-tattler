@@ -3,20 +3,27 @@ import { Settings } from './types.js';
 
 export const settings: SettingsFormField[] = [
   {
-    type: 'boolean',
-    name: 'sendModmail',
-    label: 'Send Modmail',
-    helpText: 'Send reports via Modmail',
-    defaultValue: true
+    type: "boolean",
+    name: "sendModmail",
+    label: "Send Modmail",
+    helpText: "Send reports via Modmail",
+    defaultValue: true,
   },
   {
-    type: 'string',
-    name: 'webhookURL',
-    label: 'Webhook URL (Slack or Discord)',
-    helpText: 'Enter webhook URL to send reports via Slack or Discord',
-    defaultValue: '',
-    onValidate: validateWebhookURL
-  }
+    type: "string",
+    name: "webhookURL",
+    label: "Webhook URL (Slack or Discord)",
+    helpText: "Enter webhook URL to send reports via Slack or Discord",
+    defaultValue: "",
+    onValidate: validateWebhookURL,
+  },
+  {
+    type: "boolean",
+    name: "excludeContext",
+    label: "Exclude Context from Reports",
+    helpText: "Content actioned by Reddit is frequently vulgar, derogatory, or offensive. The context can alternatively be found in the subreddit Mod Log.",
+    defaultValue: false,
+  },
 ];
 
 /**

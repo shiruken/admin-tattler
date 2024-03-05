@@ -6,6 +6,8 @@ export type Settings = {
   sendModmail: boolean;
   /** Slack or Discord webhook URL */
   webhookURL: string;
+  /** Exclude post/comment context from reports */
+  excludeContext: boolean;
 };
 
 /**
