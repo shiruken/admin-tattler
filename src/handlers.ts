@@ -1,6 +1,6 @@
 import { TriggerContext } from "@devvit/public-api";
 import { CommentSubmit, CommentUpdate, ModAction, PostSubmit, PostUpdate } from '@devvit/protos';
-import { CachedPostData } from "./interfaces.js";
+import { CachedPostData } from "./types.js";
 import { getValidatedSettings } from "./settings.js";
 
 /**
