@@ -1,11 +1,11 @@
 {
   "private": true,
   "name": "admin-tattler",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "license": "BSD-3-Clause",
   "type": "module",
   "dependencies": {
-    "@devvit/public-api": "0.10.18"
+    "@devvit/public-api": "0.10.20"
   },
   "devDependencies": {
     "typescript": "5.3.2",
