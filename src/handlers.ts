@@ -122,11 +122,11 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
     let isUser = false;
     let modlogLinkDesc = "View Admin Modlog";
-    let modlogLink = `https://www.reddit.com/r/${subredditName}/about/log?mod=a&moderatorNames=a`;
+    let modlogLink = `https://www.reddit.com/mod/${subredditName}/log?moderatorNames=a`;
     if (moderatorName != "Anti-Evil Operations" && moderatorName != "Reddit Legal" && moderatorName != "[ Redacted ]") {
       isUser = true;
       modlogLinkDesc = "View User Modlog";
-      modlogLink = `https://www.reddit.com/r/${subredditName}/about/log?mod=${moderatorName}&moderatorNames=${moderatorName}`;
+      modlogLink = `https://www.reddit.com/mod/${subredditName}/log?moderatorNames=${moderatorName}`;
     }
 
     // Send Modmail

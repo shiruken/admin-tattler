@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "admin-tattler",
-  "version": "0.4.9",
+  "version": "0.4.10",
   "license": "BSD-3-Clause",
   "type": "module",
   "dependencies": {
