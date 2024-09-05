@@ -13,19 +13,19 @@ Devvit.addSettings(settings);
 // Watch for Admin actions
 Devvit.addTrigger({
   event: 'ModAction',
-  onEvent: checkModAction
+  onEvent: checkModAction,
 });
 
 // Cache text of new and edited posts
 Devvit.addTrigger({
   events: ['PostSubmit', 'PostUpdate'],
-  onEvent: cachePost
+  onEvent: cachePost,
 });
 
 // Cache text of new and edited comments
 Devvit.addTrigger({
   events: ['CommentSubmit', 'CommentUpdate'],
-  onEvent: cacheComment
+  onEvent: cacheComment,
 });
 
 // Cache modlist during app install or upgrade
@@ -34,7 +34,7 @@ Devvit.addTrigger({
   onEvent: async (event, context) => {
     console.log(`Updating cached modlist on ${event.type}`);
     await cacheModerators(context);
-  }
+  },
 });
 
 export default Devvit;

@@ -120,18 +120,22 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       user = targetUser.name;
     }
 
-    let isUser = false;
+    let modDisplayName = moderatorName;
     let modlogLinkDesc = "View Admin Modlog";
     let modlogLink = `https://www.reddit.com/mod/${subredditName}/log?moderatorNames=a`;
     if (moderatorName != "Anti-Evil Operations" && moderatorName != "Reddit Legal" && moderatorName != "[ Redacted ]") {
-      isUser = true;
+      modDisplayName = `u/${moderatorName}`;
       modlogLinkDesc = "View User Modlog";
       modlogLink = `https://www.reddit.com/mod/${subredditName}/log?moderatorNames=${moderatorName}`;
     }
 
+    if (modDisplayName == "[ Redacted ]") {
+      modDisplayName = "Anti-Evil Operations";
+    }
+
     // Send Modmail
     if (settings.sendModmail) {
-      const msg = `**${ isUser ? "u/" : "" }${moderatorName}** has performed an action in r/${subredditName}:\n\n` +
+      const msg = `**${modDisplayName}** has performed an action in r/${subredditName}:\n\n` +
                   `* **Action:** \`${action}\`` +
                   (permalink ? `\n\n* **Permalink:** ${permalink}` : "") +
                   (user ? `\n\n* **Target User:** u/${user}` : "") +
@@ -160,7 +164,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `*${ isUser ? "u/" : "" }${moderatorName}* has performed an action in r/${subredditName}`
+              text: `*${modDisplayName}* has performed an action in r/${subredditName}`
             }
           }
         ],
@@ -219,7 +223,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       const discordPayload = {
         username: "Admin Tattler",
         avatar_url: "https://raw.githubusercontent.com/shiruken/admin-tattler/main/assets/avatar.jpg",
-        content: `**${ isUser ? "u/" : "" }${moderatorName}** has performed an action in r/${subredditName}`,
+        content: `**${modDisplayName}** has performed an action in r/${subredditName}`,
         embeds: [
           {
             color: 16729344, // #FF4500 (OrangeRed)
