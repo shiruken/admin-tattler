@@ -2,34 +2,34 @@
 
 Get notified when the Reddit Admins action content in your subreddit. Supports Modmail, Slack, and Discord.
 
-https://developers.reddit.com/apps/admin-tattler
+[https://developers.reddit.com/apps/admin-tattler](https://developers.reddit.com/apps/admin-tattler)
 
 ## Features
 
 * Minimal setup requiring **zero** knowledge about AutoModerator or coding
 * Notifications via Modmail, Slack, or Discord
-* Reports _original_ post or comment text even after getting [ Removed by Reddit ]
+* Includes _original_ post or comment text even after getting `[ Removed by Reddit ]`
 
-## Configuration
+## Installation Settings
 
-![Screenshot of App Configuration](https://github.com/shiruken/admin-tattler/assets/867617/6ecedcb0-c53e-489b-82e3-4e4a80e592de)
+![Screenshot of Installation Settings](https://github.com/user-attachments/assets/23cc61b1-c7f7-4f8b-83a9-7b50114c2f37)
 
 * [Slack: Sending messages using Incoming Webhooks](https://api.slack.com/messaging/webhooks)
 * [Discord: Intro to Webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
 
-## Screenshots
+## Notifications
 
 ### Modmail
 
-![Modmail Preview](https://github.com/shiruken/admin-tattler/assets/867617/ef72b287-83fa-44bf-98fb-28a85adbe07c)
+![Screenshot of Modmail Message](https://github.com/user-attachments/assets/dd8bbfde-6911-4e66-b4da-46e853977a0c)
 
 ### Slack
 
-![Slack Preview](https://github.com/shiruken/admin-tattler/assets/867617/836a0c74-ee65-41bd-be09-58ac4c2fddcf)
+![Screenshot of Slack Message](https://github.com/user-attachments/assets/c8e3c599-8c64-413d-8150-713a8f0caa00)
 
 ### Discord
 
-![Discord Preview](https://github.com/shiruken/admin-tattler/assets/867617/d8f45a88-4d05-44c5-882f-75dc716be230)
+![Screenshot of Discord Message](https://github.com/user-attachments/assets/18fecde7-0f95-41c8-965f-56ae7fd01855)
 
 ## Links
 
