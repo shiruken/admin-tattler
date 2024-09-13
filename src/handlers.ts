@@ -199,13 +199,6 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
                   }
                 ]
               },
-              // {
-              //   type: "section",
-              //   text: {
-              //     type: "mrkdwn",
-              //     text: `\`\`\`${JSON.stringify(event)}\`\`\``
-              //   }
-              // }
             ]
           }
         ]
