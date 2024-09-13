@@ -8,7 +8,7 @@ Get notified when the Reddit Admins action content in your subreddit. Supports M
 
 * Minimal setup requiring **zero** knowledge about AutoModerator or coding
 * Notifications via Modmail, Slack, or Discord
-* Includes _original_ post or comment text even after getting `[ Removed by Reddit ]`
+* Includes *original*_* post or comment text even after getting `[ Removed by Reddit ]`
 * Flag actioned users with a Mod Note
 
 ## Installation Settings
@@ -40,11 +40,36 @@ Mod Notes can (optionally) be added to users whose content was removed by the Re
 
 ![Screenshot of Mod Note added by Admin Tattler](https://github.com/user-attachments/assets/f3e84f6b-1e8f-4a7e-b72c-1245b21c3f12)
 
+## Changelog
+
+*[View Releases on GitHub](https://github.com/shiruken/admin-tattler/releases)*
+
+* v0.5
+  * Improve notification messages for `[ Redacted ]` moderators
+* v0.4
+  * Transition to new (Shreddit) modlog path
+  * Quote post/comment text to improve readability in Modmail
+  * Add setting to exclude post/comment context from notifications
+  * Improve handling of `[ Redacted ]` moderators
+  * Flag when cached content is used in notifications
+  * Include submitted links in post-related notifications
+  * Cache submitted links
+* v0.3
+  * Cache post/comment text for use in notifications
+  * Purge cached content after 14 days
+* v0.2
+  * Include post/comment details whenever available regardless of action type
+  * Ignore moderators demodding themselves
+  * Ignore actions by u/AutoModerator and u/reddit accounts
+  * Watch for actions by any user not in subreddit modlist
+  * Improve notification messages
+* v0.1
+  * Initial Release
+
 ## Links
 
 * [Source Code](https://github.com/shiruken/admin-tattler)
-* [Changelog](https://github.com/shiruken/admin-tattler/releases)
 * [Terms and Conditions](https://github.com/shiruken/admin-tattler/blob/main/TERMS.md)
 * [Privacy Policy](https://github.com/shiruken/admin-tattler/blob/main/PRIVACY.md)
 
-_Note: The [avatar](/assets/avatar.jpg) used in this project [was generated](https://www.bing.com/images/create/reddit-snoo-informant/1-65b3fd4630364e98a5ac66ee3f7ee499?id=dIWuP5X6chNUmVBr6cLJHQ%3D%3D&view=detailv2&idpp=genimg&form=GCRIDP&ajaxhist=0&ajaxserp=0) using Image Creator from Microsoft Designer._
+*Note: The [avatar](https://github.com/shiruken/admin-tattler/blob/main/assets/avatar.jpg) used for Discord messages was generated using Image Creator from Microsoft Designer.*
