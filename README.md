@@ -44,6 +44,8 @@ Mod Notes can (optionally) be added to users whose content was removed by the Re
 
 *[View Releases on GitHub](https://github.com/shiruken/admin-tattler/releases)*
 
+* v0.6
+  * Add setting to flag actioned users with Mod Note
 * v0.5
   * Improve notification messages for `[ Redacted ]` moderators
 * v0.4
