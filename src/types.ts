@@ -8,6 +8,8 @@ export type Settings = {
   webhookURL: string;
   /** Exclude post/comment context from reports */
   excludeContext: boolean;
+  /** Add mod note to users actioned by Reddit Admins */
+  addModNote: boolean;
 };
 
 /**

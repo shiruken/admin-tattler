@@ -52,6 +52,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
     console.log(`Detected ${action} by ${moderatorName}`);
 
+    let targetID = "";
     let permalink = "";
     let user = "";
     let url = "";
@@ -65,6 +66,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     // Posts
     const targetPost = event.targetPost;
     if (targetPost && targetPost.id) {
+      targetID = targetPost.id;
       if (targetPost.permalink) {
         permalink = `https://www.reddit.com${targetPost.permalink}`;
       }
@@ -99,6 +101,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     // Comments
     const targetComment = event.targetComment;
     if (targetComment && targetComment.id) {
+      targetID = targetComment.id;
       if (targetComment.permalink) {
         permalink = `https://www.reddit.com${targetComment.permalink}`;
       }
@@ -279,6 +282,26 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       })
         .then(() => console.log(`Sent Discord message about ${action} by ${moderatorName}`))
         .catch((e) => console.error(`Error sending Discord message about ${action} by ${moderatorName}`, e));
+    }
+
+    // Add Mod Note for content removals
+    if (
+      settings.addModNote && user && targetID &&
+      (
+        action == "removelink" || action == "spamlink" ||
+        action == "removecomment" || action == "spamcomment"
+      )
+    ) {
+      await context.reddit
+        .addModNote({
+          subreddit: subredditName,
+          user: user,
+          redditId: targetID,
+          label: "ABUSE_WARNING",
+          note: (modDisplayName.startsWith("u/") ? "Admin" : modDisplayName) + " Removal",
+        })
+        .then(() => console.log(`Added mod note to ${targetID}`))
+        .catch((e) => console.error(`Error adding mod note to ${targetID}`, e));
     }
   }
 }

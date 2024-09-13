@@ -24,6 +24,13 @@ export const settings: SettingsFormField[] = [
     helpText: "Content actioned by Reddit is frequently vulgar, derogatory, or offensive. The context can alternatively be found in the subreddit Mod Log.",
     defaultValue: false,
   },
+  {
+    type: "boolean",
+    name: "addModNote",
+    label: "Add Mod Note",
+    helpText: "Flag users actioned by the Reddit Admins with a Mod Note",
+    defaultValue: false,
+  },
 ];
 
 /**
