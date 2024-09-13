@@ -9,10 +9,11 @@ Get notified when the Reddit Admins action content in your subreddit. Supports M
 * Minimal setup requiring **zero** knowledge about AutoModerator or coding
 * Notifications via Modmail, Slack, or Discord
 * Includes _original_ post or comment text even after getting `[ Removed by Reddit ]`
+* Flag actioned users with a Mod Note
 
 ## Installation Settings
 
-![Screenshot of Installation Settings](https://github.com/user-attachments/assets/23cc61b1-c7f7-4f8b-83a9-7b50114c2f37)
+![Screenshot of Installation Settings](https://github.com/user-attachments/assets/e93647fc-4c1c-4c5e-a335-c8b860ec2a2e)
 
 * [Slack: Sending messages using Incoming Webhooks](https://api.slack.com/messaging/webhooks)
 * [Discord: Intro to Webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
@@ -30,6 +31,14 @@ Get notified when the Reddit Admins action content in your subreddit. Supports M
 ### Discord
 
 ![Screenshot of Discord Message](https://github.com/user-attachments/assets/18fecde7-0f95-41c8-965f-56ae7fd01855)
+
+## Moderation Actions
+
+### Add Note
+
+Mod Notes can (optionally) be added to users whose content was removed by the Reddit Admins
+
+![Screenshot of Mod Note added by Admin Tattler](https://github.com/user-attachments/assets/f3e84f6b-1e8f-4a7e-b72c-1245b21c3f12)
 
 ## Links
 
