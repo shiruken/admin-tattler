@@ -8,7 +8,7 @@ Get notified when the Reddit Admins action content in your subreddit. Supports M
 
 * Minimal setup requiring **zero** knowledge about AutoModerator or coding
 * Notifications via Modmail, Slack, or Discord
-* Includes *original*_* post or comment text even after getting `[ Removed by Reddit ]`
+* Includes *original* post or comment text even after getting `[ Removed by Reddit ]`
 * Flag actioned users with a Mod Note
 
 ## Installation Settings
