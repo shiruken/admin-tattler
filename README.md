@@ -40,6 +40,11 @@ Mod Notes can (optionally) be added to users whose content was removed by the Re
 
 ![Screenshot of Mod Note added by Admin Tattler](https://github.com/user-attachments/assets/f3e84f6b-1e8f-4a7e-b72c-1245b21c3f12)
 
+## Limitations
+
+* This app does not account for actions taken by Admin accounts that get *added* to a subreddit's mod team.
+* Notifications will be sent when temporary bans expire if the moderator responsible for the original ban has since left the mod team. This app is only aware of *current* moderators and cannot account for the delayed `unbanuser` action that gets scheduled for temporary bans.
+
 ## Changelog
 
 *[View Releases on GitHub](https://github.com/shiruken/admin-tattler/releases)*
