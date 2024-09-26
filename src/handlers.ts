@@ -286,7 +286,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
     // Add Mod Note for content removals
     if (
-      settings.addModNote && user && targetID &&
+      settings.addModNote && user && user != "AutoModerator" && targetID &&
       (
         action == "removelink" || action == "spamlink" ||
         action == "removecomment" || action == "spamcomment"
