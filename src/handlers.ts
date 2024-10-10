@@ -55,10 +55,11 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     let targetID = "";
     let permalink = "";
     let user = "";
+    let is_banned = false;
     let url = "";
     let title = "";
     let body = "";
-      
+
     let usedCachedTitle = false;
     let usedCachedBody = false;
     let usedCachedURL = false;
@@ -121,6 +122,11 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     const targetUser = event.targetUser;
     if (targetUser && targetUser.id) {
       user = targetUser.name;
+      const listing = await context.reddit.getBannedUsers({
+        subredditName: subredditName,
+        username: user,
+      });
+      is_banned = (await listing.all()).length == 1;
     }
 
     let modDisplayName = moderatorName;
@@ -141,7 +147,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       const msg = `**${modDisplayName}** has performed an action in r/${subredditName}:\n\n` +
                   `* **Action:** \`${action}\`` +
                   (permalink ? `\n\n* **Permalink:** ${permalink}` : "") +
-                  (user ? `\n\n* **Target User:** u/${user}` : "") +
+                  (user ? `\n\n* **Target User:** u/${user}${ is_banned ? ` (Banned in r/${subredditName})`: "" }` : "") +
                   (url ? `\n\n* **URL${ usedCachedURL ? " (Cached)" : "" }:** ${url}` : "") +
                   (!settings.excludeContext && title ? `\n\n* **Title${ usedCachedTitle ? " (Cached)" : "" }:** ${title}` : "") +
                   (!settings.excludeContext && body ? `\n\n* **Body${ usedCachedBody ? " (Cached)" : "" }:** ${quoteText(body)}` : "") +
@@ -182,7 +188,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
                     type: "mrkdwn",
                     text: `*Action:* \`${action}\`` +
                           (permalink ? `\n*Permalink:* ${permalink}` : "") +
-                          (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>` : "") +
+                          (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>${ is_banned ? ` (Banned in r/${subredditName})`: "" }` : "") +
                           (url ? `\n*URL${ usedCachedURL ? " (Cached)" : "" }:* ${url}` : "") +
                           (!settings.excludeContext && title ? `\n*Title${ usedCachedTitle ? " (Cached)" : "" }:* ${title}` : "") +
                           (!settings.excludeContext && body ? `\n*Body${ usedCachedBody ? " (Cached)" : "" }:* ${body}` : "")
@@ -243,7 +249,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       if (user) {
         discordPayload.embeds[0].fields.push({
           name: "Target User",
-          value: `[u/${user}](https://www.reddit.com/user/${user})`
+          value: `[u/${user}](https://www.reddit.com/user/${user})${ is_banned ? ` (Banned in r/${subredditName})`: "" }`
         });
       }
 
