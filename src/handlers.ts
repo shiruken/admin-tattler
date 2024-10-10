@@ -52,7 +52,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
     console.log(`Detected ${action} by ${moderatorName}`);
 
-    let targetID = "";
+    let targetID: `t1_${string}` | `t3_${string}` | undefined = undefined;
     let permalink = "";
     let user = "";
     let is_banned = false;
@@ -67,7 +67,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     // Posts
     const targetPost = event.targetPost;
     if (targetPost && targetPost.id) {
-      targetID = targetPost.id;
+      targetID = targetPost.id as `t3_${string}`;
       if (targetPost.permalink) {
         permalink = `https://www.reddit.com${targetPost.permalink}`;
       }
@@ -102,7 +102,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     // Comments
     const targetComment = event.targetComment;
     if (targetComment && targetComment.id) {
-      targetID = targetComment.id;
+      targetID = targetComment.id as `t1_${string}`;
       if (targetComment.permalink) {
         permalink = `https://www.reddit.com${targetComment.permalink}`;
       }
