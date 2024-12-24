@@ -5,7 +5,6 @@ import { checkModAction, cachePost, cacheComment, cacheModerators } from './hand
 Devvit.configure({
   redditAPI: true,
   http: true,
-  redis: true
 });
 
 Devvit.addSettings(settings);
