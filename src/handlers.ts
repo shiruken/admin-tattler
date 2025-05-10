@@ -3,6 +3,8 @@ import { CommentSubmit, CommentUpdate, ModAction, PostSubmit, PostUpdate } from 
 import { CachedPostData } from "./types.js";
 import { getValidatedSettings } from "./settings.js";
 
+const CACHE_DURATION = 60*60*24*14; // 14 days
+
 /**
  * Checks ModAction for Admins
  * @param event A ModAction object
@@ -54,6 +56,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
     let targetID: `t1_${string}` | `t3_${string}` | undefined = undefined;
     let permalink = "";
+    let createdAt = 0;
     let user = "";
     let is_banned = false;
     let url = "";
@@ -71,6 +74,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       if (targetPost.permalink) {
         permalink = `https://www.reddit.com${targetPost.permalink}`;
       }
+      createdAt = targetPost.createdAt;
       if (targetPost.url && !targetPost.url.includes(targetPost.id.slice(3))) {
         url = targetPost.url;
       }
@@ -106,6 +110,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       if (targetComment.permalink) {
         permalink = `https://www.reddit.com${targetComment.permalink}`;
       }
+      createdAt = targetComment.createdAt;
       if (targetComment.body) {
         body = targetComment.body;
         if (body == "[ Removed by Reddit ]") {
@@ -134,7 +139,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     let modlogLink = `https://www.reddit.com/mod/${subredditName}/log?moderatorNames=a`;
     if (moderatorName != "Anti-Evil Operations" && moderatorName != "Reddit Legal" && moderatorName != "[ Redacted ]") {
       modDisplayName = `u/${moderatorName}`;
-      modlogLinkDesc = "View User Modlog";
+      modlogLinkDesc = "View Modlog";
       modlogLink = `https://www.reddit.com/mod/${subredditName}/log?moderatorNames=${moderatorName}`;
     }
 
@@ -142,11 +147,18 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       modDisplayName = "Anti-Evil Operations";
     }
 
+    let createdAtText = "";
+    if (createdAt && Date.now() - createdAt > CACHE_DURATION) {
+      const createdAtDate = new Date(createdAt);
+      createdAtText = createdAtDate.toLocaleDateString("fr-CA"); // YYYY-MM-DD
+    }
+
     // Send Modmail
     if (settings.sendModmail) {
       const msg = `**${modDisplayName}** has performed an action in r/${subredditName}:\n\n` +
                   `* **Action:** \`${action}\`` +
                   (permalink ? `\n\n* **Permalink:** ${permalink}` : "") +
+                  (createdAtText ? `\n\n* **Content Date:** ${createdAtText}` : "") + 
                   (user ? `\n\n* **Target User:** u/${user}${ is_banned ? ` (Banned in r/${subredditName})`: "" }` : "") +
                   (url ? `\n\n* **URL${ usedCachedURL ? " (Cached)" : "" }:** ${url}` : "") +
                   (!settings.excludeContext && title ? `\n\n* **Title${ usedCachedTitle ? " (Cached)" : "" }:** ${title}` : "") +
@@ -187,6 +199,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
                     type: "mrkdwn",
                     text: `*Action:* \`${action}\`` +
                           (permalink ? `\n*Permalink:* ${permalink}` : "") +
+                          (createdAtText ? `\n*Content Date:* ${createdAtText}` : "") +
                           (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>${ is_banned ? ` (Banned in r/${subredditName})`: "" }` : "") +
                           (url ? `\n*URL${ usedCachedURL ? " (Cached)" : "" }:* ${url}` : "") +
                           (!settings.excludeContext && title ? `\n*Title${ usedCachedTitle ? " (Cached)" : "" }:* ${title}` : "") +
@@ -242,6 +255,13 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         discordPayload.embeds[0].fields.push({
           name: "Permalink",
           value: permalink
+        });
+      }
+
+      if (createdAtText) {
+        discordPayload.embeds[0].fields.push({
+          name: "Content Date",
+          value: createdAtText
         });
       }
 
@@ -328,7 +348,7 @@ export async function cachePost(event: PostSubmit | PostUpdate, context: Trigger
       .set(post.id, JSON.stringify(data))
       .catch((e) => console.error(`Error writing ${post.id} to Redis`, e));
     await context.redis
-      .expire(post.id, 60*60*24*14) // 14 days
+      .expire(post.id, CACHE_DURATION)
       .catch((e) => console.error(`Error setting expiration for ${post.id} in Redis`, e));
   }
 }
@@ -360,7 +380,7 @@ export async function cacheComment(event: CommentSubmit | CommentUpdate, context
       .set(comment.id, comment.body)
       .catch((e) => console.error(`Error writing ${comment.id} to Redis`, e));
     await context.redis
-      .expire(comment.id, 60*60*24*14) // 14 days
+      .expire(comment.id, CACHE_DURATION)
       .catch((e) => console.error(`Error setting expiration for ${comment.id} in Redis`, e));
   }
 }
