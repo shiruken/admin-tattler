@@ -148,7 +148,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     }
 
     let createdAtText = "";
-    if (createdAt && Date.now() - createdAt > CACHE_DURATION) {
+    if (createdAt && Date.now() - createdAt > CACHE_DURATION*1000) {
       const createdAtDate = new Date(createdAt);
       createdAtText = createdAtDate.toLocaleDateString("fr-CA"); // YYYY-MM-DD
     }
