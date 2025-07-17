@@ -165,8 +165,8 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       const msg = `**${modDisplayName}** has performed an action in r/${subredditName}:\n\n` +
                   `* **Action:** \`${action}\`` +
                   (permalink ? `\n\n* **Permalink:** ${permalink}` : "") +
-                  (createdAtText ? `\n\n* **Content Date:** ${createdAtText}` : "") + 
                   (user ? `\n\n* **Target User:** u/${user}${ is_banned ? ` (Banned in r/${subredditName})`: "" }` : "") +
+                  (createdAtText ? `\n\n* **Content Date:** ${createdAtText}` : "") + 
                   (url ? `\n\n* **URL${ usedCachedURL ? " (Cached)" : "" }:** ${url}` : "") +
                   (!settings.excludeContext && title ? `\n\n* **Title${ usedCachedTitle ? " (Cached)" : "" }:** ${title}` : "") +
                   (!settings.excludeContext && body ? `\n\n* **Body${ usedCachedBody ? " (Cached)" : "" }:** ${quoteText(body.slice(0, 9000))}` : "") +
@@ -206,8 +206,8 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
                     type: "mrkdwn",
                     text: `*Action:* \`${action}\`` +
                           (permalink ? `\n*Permalink:* ${permalink}` : "") +
-                          (createdAtText ? `\n*Content Date:* ${createdAtText}` : "") +
                           (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>${ is_banned ? ` (Banned in r/${subredditName})`: "" }` : "") +
+                          (createdAtText ? `\n*Content Date:* ${createdAtText}` : "") +
                           (url ? `\n*URL${ usedCachedURL ? " (Cached)" : "" }:* ${url}` : "") +
                           (!settings.excludeContext && title ? `\n*Title${ usedCachedTitle ? " (Cached)" : "" }:* ${title}` : "") +
                           (!settings.excludeContext && body ? `\n*Body${ usedCachedBody ? " (Cached)" : "" }:* ${body.slice(0, 2500)}` : "")
@@ -265,17 +265,17 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         });
       }
 
-      if (createdAtText) {
-        discordPayload.embeds[0].fields.push({
-          name: "Content Date",
-          value: createdAtText
-        });
-      }
-
       if (user) {
         discordPayload.embeds[0].fields.push({
           name: "Target User",
           value: `[u/${user}](https://www.reddit.com/user/${user})${ is_banned ? ` (Banned in r/${subredditName})`: "" }`
+        });
+      }
+
+      if (createdAtText) {
+        discordPayload.embeds[0].fields.push({
+          name: "Content Date",
+          value: createdAtText
         });
       }
 
