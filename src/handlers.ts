@@ -46,9 +46,16 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     moderatorName != "AutoModerator" && moderatorName != "reddit"
   ) {
 
+    // Ignore actions from [deleted] moderators. Should prevent notification 
+    // spam when former moderators delete their content or accounts.
+    if (moderatorName == "[deleted]") {
+      console.log(`Ignored ${action} by ${moderatorName}`);
+      return;
+    }
+
     // Ignore user removing themselves as moderator
     if (action == "removemoderator" && moderatorName == event.targetUser!.name) {
-      console.log(`Ignored ${action} by ${moderatorName}`);
+      console.log(`Ignored removemoderator by ${moderatorName}`);
       return;
     }
 
