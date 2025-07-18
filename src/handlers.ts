@@ -3,7 +3,7 @@ import { CommentSubmit, CommentUpdate, ModAction, PostSubmit, PostUpdate } from 
 import { CachedPostData } from "./types.js";
 import { getValidatedSettings } from "./settings.js";
 
-const CACHE_DURATION = 60*60*24*14; // 14 days
+const CACHE_DURATION = 60*60*24*30; // 30 days
 
 /**
  * Checks ModAction for Admins
