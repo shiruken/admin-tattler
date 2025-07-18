@@ -49,6 +49,10 @@ Mod Notes can (optionally) be added to users whose content was removed by the Re
 
 *[View Releases on GitHub](https://github.com/shiruken/admin-tattler/releases)*
 
+* v0.7
+  * Better handling of actions caused by `[deleted]` moderator accounts
+  * Increased cache duration to 30 days
+  * Indicate original content date on cache misses
 * v0.6
   * Modmail notifications routed into Inbox rather than Mod Discussions
   * Flag banned users in notification messages
