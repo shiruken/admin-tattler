@@ -13,7 +13,7 @@ Get notified when the Reddit Admins action content in your subreddit. Supports M
 
 ## Installation Settings
 
-![Screenshot of Installation Settings](https://github.com/user-attachments/assets/e93647fc-4c1c-4c5e-a335-c8b860ec2a2e)
+![Screenshot of Installation Settings](https://github.com/user-attachments/assets/75cd88e6-318f-4e53-81c5-e03d2d870d58)
 
 * [Slack: Sending messages using Incoming Webhooks](https://api.slack.com/messaging/webhooks)
 * [Discord: Intro to Webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
@@ -40,6 +40,12 @@ Mod Notes can (optionally) be added to users whose content was removed by the Re
 
 ![Screenshot of Mod Note added by Admin Tattler](https://github.com/user-attachments/assets/f3e84f6b-1e8f-4a7e-b72c-1245b21c3f12)
 
+### Force Remove
+
+A secondary removal can (optionally) be performed on all content removed by the Reddit Admins. This will fully remove the content from visibility in the subreddit and prevents automatic restoration in the event the user successfully appeals the Admin action.
+
+![Screenshot of secondary removal action performed by Admin Tattler](https://github.com/user-attachments/assets/19fa6ad6-aa2a-4ba8-b68a-f80fd93bfc3f)
+
 ## Limitations
 
 * This app does not account for actions taken by Admin accounts that get *added* to a subreddit's mod team.
@@ -49,12 +55,14 @@ Mod Notes can (optionally) be added to users whose content was removed by the Re
 
 *[View Releases on GitHub](https://github.com/shiruken/admin-tattler/releases)*
 
+* v0.8
+  * Add setting to fully remove actioned content by performing a secondary removal
 * v0.7
   * Better handling of actions caused by `[deleted]` moderator accounts
-  * Increased cache duration to 30 days
+  * Increase cache duration to 30 days
   * Indicate original content date on cache misses
 * v0.6
-  * Modmail notifications routed into Inbox rather than Mod Discussions
+  * Modmail notifications route into Inbox rather than Mod Discussions
   * Flag banned users in notification messages
   * Add setting to flag actioned users with Mod Note
 * v0.5
