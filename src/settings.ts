@@ -31,6 +31,13 @@ export const settings: SettingsFormField[] = [
     helpText: "Flag users actioned by the Reddit Admins with a Mod Note",
     defaultValue: false,
   },
+  {
+    type: "boolean",
+    name: "forceRemove",
+    label: "Force Remove",
+    helpText: "Fully remove actioned content by performing a secondary removal. Prevents automatic restoration after user appeal.",
+    defaultValue: false,
+  },
 ];
 
 /**

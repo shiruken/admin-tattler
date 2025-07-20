@@ -335,6 +335,22 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         .then(() => console.log(`Added mod note to ${targetID}`))
         .catch((e) => console.error(`Error adding mod note to ${targetID}`, e));
     }
+
+    // Force Remove
+    // Perform second removal action to fully remove content from subreddit
+    // and prevent becoming visible if user appeals the AEO removal.
+    if (
+      settings.forceRemove && targetID &&
+      (
+        action == "removelink" || action == "spamlink" ||
+        action == "removecomment" || action == "spamcomment"
+      )
+    ) {
+      await context.reddit
+        .remove(targetID, (action == "spamlink" || action == "spamcomment"))
+        .then(() => console.log(`Force removed ${targetID}`))
+        .catch((e) => console.error(`Error force removing ${targetID}`, e));        
+    }
   }
 }
 
