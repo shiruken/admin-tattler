@@ -56,7 +56,7 @@ A secondary removal can (optionally) be performed on all content removed by the 
 *[View Releases on GitHub](https://github.com/shiruken/admin-tattler/releases)*
 
 * v0.8
-  * Add setting to fully remove actioned content by performing a secondary removal
+  * ~~Add setting to fully remove actioned content by performing a secondary removal~~ Disabled because of unintended behavior
 * v0.7
   * Better handling of actions caused by `[deleted]` moderator accounts
   * Increase cache duration to 30 days

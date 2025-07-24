@@ -10,8 +10,6 @@ export type Settings = {
   excludeContext: boolean;
   /** Add mod note to users actioned by Reddit Admins */
   addModNote: boolean;
-  /** Perform second remove action on all actioned content */
-  forceRemove: boolean;
 };
 
 /**
