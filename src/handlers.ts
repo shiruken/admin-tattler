@@ -401,12 +401,11 @@ export async function cachePost(event: PostSubmit | PostUpdate, context: Trigger
       url: post.url
     };
     await context.redis
-      .set(post.id, JSON.stringify(data))
+      .set(post.id, JSON.stringify(data), {
+        expiration: new Date(Date.now() + CACHE_DURATION * 1000),
+      })
       .then(() => logger.cache.debug(`Wrote ${post.id} to Redis`))
       .catch((e) => logger.cache.error(`Error writing ${post.id} to Redis`, e));
-    await context.redis
-      .expire(post.id, CACHE_DURATION)
-      .catch((e) => logger.cache.error(`Error setting expiration for ${post.id} in Redis`, e));
   }
 }
 
@@ -441,12 +440,11 @@ export async function cacheComment(event: CommentSubmit | CommentUpdate, context
   const comment = event.comment;
   if (comment && comment.body) {
     await context.redis
-      .set(comment.id, comment.body)
+      .set(comment.id, comment.body, {
+        expiration: new Date(Date.now() + CACHE_DURATION * 1000),
+      })
       .then(() => logger.cache.debug(`Wrote ${comment.id} to Redis`))
       .catch((e) => logger.cache.error(`Error writing ${comment.id} to Redis`, e));
-    await context.redis
-      .expire(comment.id, CACHE_DURATION)
-      .catch((e) => logger.cache.error(`Error setting expiration for ${comment.id} in Redis`, e));
   }
 }
 
@@ -488,8 +486,9 @@ export async function cacheModerators(context: TriggerContext): Promise<string[]
 
   // Write string representation of array to Redis with 24-hour TTL
   try {
-    await context.redis.set("mods", moderators.toString());
-    await context.redis.expire("mods", MODERATOR_CACHE_TTL_SECONDS);
+    await context.redis.set("mods", moderators.toString(), {
+      expiration: new Date(Date.now() + MODERATOR_CACHE_TTL_SECONDS * 1000),
+    });
     logger.modlist.info(`Wrote ${moderators.length} moderators to Redis with ${MODERATOR_CACHE_TTL_SECONDS}s TTL`);
   } catch (e) {
     logger.modlist.error('Error writing moderators to Redis', e);

@@ -12,12 +12,10 @@ describe("handlers", () => {
   describe("cachePost", () => {
     it("caches post title, body, and url to Redis with expiration", async () => {
       const redisSet = vi.fn().mockResolvedValue("OK");
-      const redisExpire = vi.fn().mockResolvedValue(1);
 
       const mockContext = {
         redis: {
           set: redisSet,
-          expire: redisExpire,
         },
       } as unknown as TriggerContext;
 
@@ -38,9 +36,11 @@ describe("handlers", () => {
           title: "Test Post Title",
           body: "Test post body content",
           url: "https://reddit.com/r/test/comments/post123",
-        })
+        }),
+        {
+          expiration: expect.any(Date),
+        }
       );
-      expect(redisExpire).toHaveBeenCalledWith("t3_post123", 60 * 60 * 24 * 30);
     });
 
     it("does nothing when post or title is missing", async () => {
@@ -53,12 +53,11 @@ describe("handlers", () => {
       expect(redisSet).not.toHaveBeenCalled();
     });
 
-    it("handles Redis write and expiration errors gracefully", async () => {
+    it("handles Redis write errors gracefully", async () => {
       const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
       const mockContext = {
         redis: {
           set: vi.fn().mockRejectedValue(new Error("Redis write failure")),
-          expire: vi.fn().mockRejectedValue(new Error("Redis expire failure")),
         },
       } as unknown as TriggerContext;
 
@@ -71,7 +70,6 @@ describe("handlers", () => {
 
       await cachePost(event, mockContext);
       expect(consoleError).toHaveBeenCalledWith("[cache] Error writing t3_err1 to Redis", expect.any(Error));
-      expect(consoleError).toHaveBeenCalledWith("[cache] Error setting expiration for t3_err1 in Redis", expect.any(Error));
       consoleError.mockRestore();
     });
   });
@@ -79,12 +77,10 @@ describe("handlers", () => {
   describe("cacheComment", () => {
     it("caches comment body to Redis with expiration", async () => {
       const redisSet = vi.fn().mockResolvedValue("OK");
-      const redisExpire = vi.fn().mockResolvedValue(1);
 
       const mockContext = {
         redis: {
           set: redisSet,
-          expire: redisExpire,
         },
       } as unknown as TriggerContext;
 
@@ -97,8 +93,9 @@ describe("handlers", () => {
 
       await cacheComment(event, mockContext);
 
-      expect(redisSet).toHaveBeenCalledWith("t1_comm123", "This is a comment body");
-      expect(redisExpire).toHaveBeenCalledWith("t1_comm123", 60 * 60 * 24 * 30);
+      expect(redisSet).toHaveBeenCalledWith("t1_comm123", "This is a comment body", {
+        expiration: expect.any(Date),
+      });
     });
 
     it("does nothing when comment or body is missing", async () => {
@@ -111,12 +108,11 @@ describe("handlers", () => {
       expect(redisSet).not.toHaveBeenCalled();
     });
 
-    it("handles Redis write and expiration errors gracefully", async () => {
+    it("handles Redis write errors gracefully", async () => {
       const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
       const mockContext = {
         redis: {
           set: vi.fn().mockRejectedValue(new Error("Redis comment write error")),
-          expire: vi.fn().mockRejectedValue(new Error("Redis comment expire error")),
         },
       } as unknown as TriggerContext;
 
@@ -129,7 +125,6 @@ describe("handlers", () => {
 
       await cacheComment(event, mockContext);
       expect(consoleError).toHaveBeenCalledWith("[cache] Error writing t1_errcomm to Redis", expect.any(Error));
-      expect(consoleError).toHaveBeenCalledWith("[cache] Error setting expiration for t1_errcomm in Redis", expect.any(Error));
       consoleError.mockRestore();
     });
   });
@@ -137,7 +132,6 @@ describe("handlers", () => {
   describe("cacheModerators", () => {
     it("fetches moderator usernames and stores them in Redis with 24-hour expiration", async () => {
       const redisSet = vi.fn().mockResolvedValue("OK");
-      const redisExpire = vi.fn().mockResolvedValue(1);
       const mockModerators = [{ username: "mod1" }, { username: "mod2" }];
 
       async function* getModeratorsGen() {
@@ -155,15 +149,15 @@ describe("handlers", () => {
         },
         redis: {
           set: redisSet,
-          expire: redisExpire,
         },
       } as unknown as TriggerContext;
 
       const result = await cacheModerators(mockContext);
 
       expect(result).toEqual(["mod1", "mod2"]);
-      expect(redisSet).toHaveBeenCalledWith("mods", "mod1,mod2");
-      expect(redisExpire).toHaveBeenCalledWith("mods", 86400);
+      expect(redisSet).toHaveBeenCalledWith("mods", "mod1,mod2", {
+        expiration: expect.any(Date),
+      });
     });
 
     it("throws when fetching moderators fails", async () => {
@@ -296,8 +290,9 @@ describe("handlers", () => {
 
       await checkModAction(event, mockContext);
 
-      expect(redisSet).toHaveBeenCalledWith("mods", "autofetched_mod");
-      expect(redisExpire).toHaveBeenCalledWith("mods", 86400);
+      expect(redisSet).toHaveBeenCalledWith("mods", "autofetched_mod", {
+        expiration: expect.any(Date),
+      });
       expect(createModInboxConversation).not.toHaveBeenCalled();
     });
 
@@ -337,7 +332,9 @@ describe("handlers", () => {
       await checkModAction(event, mockContext);
 
       // Verify fresh modlist was fetched and saved
-      expect(redisSet).toHaveBeenCalledWith("mods", "existing_mod,newly_added_mod");
+      expect(redisSet).toHaveBeenCalledWith("mods", "existing_mod,newly_added_mod", {
+        expiration: expect.any(Date),
+      });
       // Verify no modmail alert sent because newly_added_mod was confirmed
       expect(createModInboxConversation).not.toHaveBeenCalled();
     });
@@ -432,7 +429,9 @@ describe("handlers", () => {
       } as unknown as ModAction;
 
       await checkModAction(event, mockContext);
-      expect(redisSet).toHaveBeenCalledWith("mods", "newmod");
+      expect(redisSet).toHaveBeenCalledWith("mods", "newmod", {
+        expiration: expect.any(Date),
+      });
     });
 
     it("ignores actions performed by sub moderators", async () => {
