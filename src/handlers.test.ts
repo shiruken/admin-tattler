@@ -70,8 +70,8 @@ describe("handlers", () => {
       } as unknown as PostSubmit;
 
       await cachePost(event, mockContext);
-      expect(consoleError).toHaveBeenCalledWith("Error writing t3_err1 to Redis", expect.any(Error));
-      expect(consoleError).toHaveBeenCalledWith("Error setting expiration for t3_err1 in Redis", expect.any(Error));
+      expect(consoleError).toHaveBeenCalledWith("[cache] Error writing t3_err1 to Redis", expect.any(Error));
+      expect(consoleError).toHaveBeenCalledWith("[cache] Error setting expiration for t3_err1 in Redis", expect.any(Error));
       consoleError.mockRestore();
     });
   });
@@ -128,8 +128,8 @@ describe("handlers", () => {
       } as unknown as CommentSubmit;
 
       await cacheComment(event, mockContext);
-      expect(consoleError).toHaveBeenCalledWith("Error writing t1_errcomm to Redis", expect.any(Error));
-      expect(consoleError).toHaveBeenCalledWith("Error setting expiration for t1_errcomm in Redis", expect.any(Error));
+      expect(consoleError).toHaveBeenCalledWith("[cache] Error writing t1_errcomm to Redis", expect.any(Error));
+      expect(consoleError).toHaveBeenCalledWith("[cache] Error setting expiration for t1_errcomm in Redis", expect.any(Error));
       consoleError.mockRestore();
     });
   });
@@ -225,7 +225,7 @@ describe("handlers", () => {
       } as unknown as TriggerContext;
 
       await cacheModerators(mockContext);
-      expect(consoleError).toHaveBeenCalledWith("Error writing moderators to Redis", expect.any(Error));
+      expect(consoleError).toHaveBeenCalledWith("[modlist] Error writing moderators to Redis", expect.any(Error));
       consoleError.mockRestore();
     });
   });
@@ -373,7 +373,7 @@ describe("handlers", () => {
 
       await checkModAction(event, mockContext);
 
-      expect(consoleError).toHaveBeenCalledWith("Error performing live modlist refresh", expect.any(Error));
+      expect(consoleError).toHaveBeenCalledWith("[action] Error performing live modlist refresh", expect.any(Error));
       expect(createModInboxConversation).toHaveBeenCalledTimes(1);
       consoleError.mockRestore();
     });
@@ -882,6 +882,119 @@ describe("handlers", () => {
       expect(modmailArgs.bodyMarkdown).toContain("Direct self text here");
     });
 
+    it("handles removed post when Redis has invalid JSON or no cached post", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+
+      // Test with invalid JSON in Redis
+      const mockContextInvalidJson = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            if (key === "t3_invalid") return Promise.resolve("not-valid-json{{{");
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+          expire: vi.fn().mockResolvedValue(1),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const eventInvalid: ModAction = {
+        action: "removelink",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_sub", name: "sub" },
+        targetPost: {
+          id: "t3_invalid",
+          title: "[ Removed by Reddit ]",
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(eventInvalid, mockContextInvalidJson);
+      expect(consoleError).toHaveBeenCalledWith("[cache] Error parsing JSON for t3_invalid", expect.any(Error));
+
+      // Test when post is not found in Redis
+      const mockContextNotFound = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+          expire: vi.fn().mockResolvedValue(1),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const eventNotFound: ModAction = {
+        action: "removelink",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_sub", name: "sub" },
+        targetPost: {
+          id: "t3_notfound",
+          title: "[ Removed by Reddit ]",
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(eventNotFound, mockContextNotFound);
+      consoleError.mockRestore();
+    });
+
+    it("handles removed comment when not found in Redis", async () => {
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+          expire: vi.fn().mockResolvedValue(1),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        action: "removecomment",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_sub", name: "sub" },
+        targetComment: {
+          id: "t1_notfound",
+          body: "[ Removed by Reddit ]",
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+    });
+
     it("handles errors during modmail, webhook, and mod note dispatch gracefully", async () => {
       const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -927,14 +1040,14 @@ describe("handlers", () => {
       await checkModAction(event, mockContext);
 
       expect(consoleError).toHaveBeenCalledWith(
-        "Error sending modmail about removelink by admin_tester",
+        "[notify] Error sending modmail about removelink by admin_tester",
         expect.any(Error)
       );
       expect(consoleError).toHaveBeenCalledWith(
-        "Error sending Slack message about removelink by admin_tester",
+        "[notify] Error sending Slack message about removelink by admin_tester",
         expect.any(Error)
       );
-      expect(consoleError).toHaveBeenCalledWith("Error adding mod note to t3_p1", expect.any(Error));
+      expect(consoleError).toHaveBeenCalledWith("[notify] Error adding mod note to t3_p1", expect.any(Error));
 
       consoleError.mockRestore();
     });
@@ -974,7 +1087,7 @@ describe("handlers", () => {
 
       await checkModAction(event, mockContext);
       expect(consoleError).toHaveBeenCalledWith(
-        "Error sending Discord message about removelink by admin_tester",
+        "[notify] Error sending Discord message about removelink by admin_tester",
         expect.any(Error)
       );
       consoleError.mockRestore();

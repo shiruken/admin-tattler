@@ -2,6 +2,7 @@ import { TriggerContext } from "@devvit/public-api";
 import { CommentSubmit, CommentUpdate, ModAction, PostSubmit, PostUpdate } from '@devvit/protos';
 import { CachedPostData } from "./types.js";
 import { getValidatedSettings } from "./settings.js";
+import { logger } from "./logger.js";
 
 const CACHE_DURATION = 60*60*24*30; // 30 days
 const MODERATOR_CACHE_TTL_SECONDS = 60*60*24; // 24 hours (self-heal missed webhooks)
@@ -36,25 +37,26 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     action == "acceptmoderatorinvite" || action == "addmoderator" ||
     action == "removemoderator" || action == "reordermoderators"
   ) {
-    console.log(`Updating cached modlist on ${action} by ${moderatorName}`);
+    logger.modlist.info(`Updating cached modlist on ${action} by ${moderatorName}`);
     await cacheModerators(context);
   }
 
   // Ignore actions by platform bots
   if (moderatorName == "AutoModerator" || moderatorName == "reddit") {
+    logger.action.debug(`Ignored ${action} by platform bot ${moderatorName}`);
     return;
   }
 
   // Ignore actions from [deleted] moderators. Should prevent notification 
   // spam when former moderators delete their content or accounts.
   if (moderatorName == "[deleted]") {
-    console.log(`Ignored ${action} by ${moderatorName}`);
+    logger.action.debug(`Ignored ${action} by [deleted] moderator`);
     return;
   }
 
   // Ignore user removing themselves as moderator
   if (action == "removemoderator" && moderatorName.toLowerCase() == event.targetUser?.name?.toLowerCase()) {
-    console.log(`Ignored removemoderator by ${moderatorName}`);
+    logger.action.info(`Ignored removemoderator by ${moderatorName} on self`);
     return;
   }
 
@@ -68,6 +70,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     subredditName === "admin_tattler_dev" && isPrerelease(context.appVersion);
 
   if (isMod && !isPlaytestDev) {
+    logger.action.debug(`Ignored ${action} by local moderator u/${moderatorName}`);
     return;
   }
 
@@ -80,24 +83,24 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     moderatorName != "Reddit Legal" &&
     moderatorName != "[ Redacted ]"
   ) {
-    console.log(`u/${moderatorName} not found in cached modlist, performing live refresh to verify`);
+    logger.action.info(`u/${moderatorName} not found in cached modlist, performing live refresh to verify`);
     try {
       moderators = await cacheModerators(context);
       isMod = moderators.some((m) => m.toLowerCase() === moderatorName.toLowerCase());
       if (isMod) {
-        console.log(`u/${moderatorName} confirmed as moderator after live refresh; skipping`);
+        logger.action.info(`u/${moderatorName} confirmed as moderator after live refresh; skipping`);
         return;
       }
     } catch (e) {
-      console.error("Error performing live modlist refresh", e);
+      logger.action.error("Error performing live modlist refresh", e);
     }
   }
 
   if (isPlaytestDev && isMod) {
-    console.log(`[Playtest] Simulating Admin action for mod u/${moderatorName}`);
+    logger.action.info(`[Playtest] Simulating Admin action for mod u/${moderatorName}`);
   }
 
-  console.log(`Detected ${action} by ${moderatorName}`);
+  logger.action.info(`Detected ${action} by ${moderatorName}`);
 
     let targetID: `t1_${string}` | `t3_${string}` | undefined = undefined;
     let permalink = "";
@@ -218,8 +221,8 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
           subject: "Admin Action Detected",
           bodyMarkdown: msg,
         })
-        .then(() => console.log(`Sent modmail about ${action} by ${moderatorName}`))
-        .catch((e) => console.error(`Error sending modmail about ${action} by ${moderatorName}`, e));
+        .then(() => logger.notify.info(`Sent modmail about ${action} by ${moderatorName}`))
+        .catch((e) => logger.notify.error(`Error sending modmail about ${action} by ${moderatorName}`, e));
     }
 
     // Send to Slack
@@ -274,8 +277,8 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         method: 'POST',
         body: JSON.stringify(slackPayload),
       })
-        .then(() => console.log(`Sent Slack message about ${action} by ${moderatorName}`))
-        .catch((e) => console.error(`Error sending Slack message about ${action} by ${moderatorName}`, e));
+        .then(() => logger.notify.info(`Sent Slack message about ${action} by ${moderatorName}`))
+        .catch((e) => logger.notify.error(`Error sending Slack message about ${action} by ${moderatorName}`, e));
     }
 
     // Send to Discord
@@ -351,8 +354,8 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         },
         body: JSON.stringify(discordPayload),
       })
-        .then(() => console.log(`Sent Discord message about ${action} by ${moderatorName}`))
-        .catch((e) => console.error(`Error sending Discord message about ${action} by ${moderatorName}`, e));
+        .then(() => logger.notify.info(`Sent Discord message about ${action} by ${moderatorName}`))
+        .catch((e) => logger.notify.error(`Error sending Discord message about ${action} by ${moderatorName}`, e));
     }
 
     // Add Mod Note for content removals
@@ -371,8 +374,8 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
           label: "ABUSE_WARNING",
           note: (modDisplayName.startsWith("u/") ? "Admin" : modDisplayName) + " Removal",
         })
-        .then(() => console.log(`Added mod note to ${targetID}`))
-        .catch((e) => console.error(`Error adding mod note to ${targetID}`, e));
+        .then(() => logger.notify.info(`Added mod note to ${targetID}`))
+        .catch((e) => logger.notify.error(`Error adding mod note to ${targetID}`, e));
     }
 }
 
@@ -391,16 +394,17 @@ export async function cachePost(event: PostSubmit | PostUpdate, context: Trigger
     };
     await context.redis
       .set(post.id, JSON.stringify(data))
-      .catch((e) => console.error(`Error writing ${post.id} to Redis`, e));
+      .then(() => logger.cache.debug(`Wrote ${post.id} to Redis`))
+      .catch((e) => logger.cache.error(`Error writing ${post.id} to Redis`, e));
     await context.redis
       .expire(post.id, CACHE_DURATION)
-      .catch((e) => console.error(`Error setting expiration for ${post.id} in Redis`, e));
+      .catch((e) => logger.cache.error(`Error setting expiration for ${post.id} in Redis`, e));
   }
 }
 
 /**
  * Get cached post text
- * @param comment_id A post fullname (including t3_ prefix)
+ * @param post_id A post fullname (including t3_ prefix)
  * @param context A TriggerContext object
  * @returns A Promise that resolves to a {@link CachedPostData} object containing the cached post text
  */
@@ -408,7 +412,14 @@ async function getCachedPost(post_id: string, context: TriggerContext): Promise<
   const value = await context.redis.get(post_id);
   let cachedPost: CachedPostData | undefined = undefined;
   if (value) {
-    cachedPost = JSON.parse(value);
+    try {
+      cachedPost = JSON.parse(value);
+      logger.cache.debug(`Retrieved cached post data for ${post_id}`);
+    } catch (e) {
+      logger.cache.error(`Error parsing JSON for ${post_id}`, e);
+    }
+  } else {
+    logger.cache.debug(`No cached post data found for ${post_id}`);
   }
   return cachedPost;
 }
@@ -423,10 +434,11 @@ export async function cacheComment(event: CommentSubmit | CommentUpdate, context
   if (comment && comment.body) {
     await context.redis
       .set(comment.id, comment.body)
-      .catch((e) => console.error(`Error writing ${comment.id} to Redis`, e));
+      .then(() => logger.cache.debug(`Wrote ${comment.id} to Redis`))
+      .catch((e) => logger.cache.error(`Error writing ${comment.id} to Redis`, e));
     await context.redis
       .expire(comment.id, CACHE_DURATION)
-      .catch((e) => console.error(`Error setting expiration for ${comment.id} in Redis`, e));
+      .catch((e) => logger.cache.error(`Error setting expiration for ${comment.id} in Redis`, e));
   }
 }
 
@@ -438,6 +450,11 @@ export async function cacheComment(event: CommentSubmit | CommentUpdate, context
  */
 async function getCachedComment(comment_id: string, context: TriggerContext): Promise<string | undefined> {
   const cachedComment = await context.redis.get(comment_id);
+  if (cachedComment) {
+    logger.cache.debug(`Retrieved cached comment data for ${comment_id}`);
+  } else {
+    logger.cache.debug(`No cached comment data found for ${comment_id}`);
+  }
   return cachedComment;
 }
 
@@ -465,9 +482,9 @@ export async function cacheModerators(context: TriggerContext): Promise<string[]
   try {
     await context.redis.set("mods", moderators.toString());
     await context.redis.expire("mods", MODERATOR_CACHE_TTL_SECONDS);
-    console.log(`Wrote ${moderators.length} moderators to Redis with ${MODERATOR_CACHE_TTL_SECONDS}s TTL`);
+    logger.modlist.info(`Wrote ${moderators.length} moderators to Redis with ${MODERATOR_CACHE_TTL_SECONDS}s TTL`);
   } catch (e) {
-    console.error('Error writing moderators to Redis', e);
+    logger.modlist.error('Error writing moderators to Redis', e);
   }
 
   return moderators;
@@ -481,10 +498,12 @@ export async function cacheModerators(context: TriggerContext): Promise<string[]
 async function getCachedModerators(context: TriggerContext): Promise<string[]> {
   const cached = await context.redis.get("mods");
   if (cached) {
-    return cached.split(","); // Parse string representation of array
+    const moderators = cached.split(","); // Parse string representation of array
+    logger.modlist.debug(`Retrieved ${moderators.length} cached moderators`);
+    return moderators;
   }
 
-  console.log("Cached modlist is empty or expired, refreshing...");
+  logger.modlist.info("Cached modlist is empty or expired, refreshing...");
   return await cacheModerators(context);
 }
 

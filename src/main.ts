@@ -1,6 +1,7 @@
 import { Devvit } from '@devvit/public-api';
 import { settings } from './settings.js';
 import { checkModAction, cachePost, cacheComment, cacheModerators } from './handlers.js';
+import { logger } from './logger.js';
 
 Devvit.configure({
   redditAPI: true,
@@ -32,7 +33,7 @@ Devvit.addTrigger({
 Devvit.addTrigger({
   events: ['AppInstall', 'AppUpgrade'],
   onEvent: async (event, context) => {
-    console.log(`Updating cached modlist on ${event.type}`);
+    logger.app.info(`Updating cached modlist on ${event.type}`);
     await cacheModerators(context);
   },
 });
