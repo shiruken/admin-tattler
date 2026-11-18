@@ -40,12 +40,6 @@ Mod Notes can (optionally) be added to users whose content was removed by the Re
 
 ![Screenshot of Mod Note added by Admin Tattler](https://github.com/user-attachments/assets/f3e84f6b-1e8f-4a7e-b72c-1245b21c3f12)
 
-### Force Remove
-
-A secondary removal can (optionally) be performed on all content removed by the Reddit Admins. This will fully remove the content from visibility in the subreddit and prevents automatic restoration in the event the user successfully appeals the Admin action.
-
-![Screenshot of secondary removal action performed by Admin Tattler](https://github.com/user-attachments/assets/19fa6ad6-aa2a-4ba8-b68a-f80fd93bfc3f)
-
 ## Limitations
 
 * This app does not account for actions taken by Admin accounts that get *added* to a subreddit's mod team.
