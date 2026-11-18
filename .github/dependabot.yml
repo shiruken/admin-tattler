@@ -13,3 +13,6 @@ updates:
       directory: "/"
       schedule:
           interval: "monthly"
+      ignore:
+          - dependency-name: "typescript"
+            update-types: ["version-update:semver-major"]
