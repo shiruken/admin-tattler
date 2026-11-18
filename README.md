@@ -86,5 +86,3 @@ Mod Notes can (optionally) be added to users whose content was removed by the Re
 * [Source Code](https://github.com/shiruken/admin-tattler)
 * [Terms and Conditions](https://github.com/shiruken/admin-tattler/blob/main/TERMS.md)
 * [Privacy Policy](https://github.com/shiruken/admin-tattler/blob/main/PRIVACY.md)
-
-*Note: The [avatar](https://github.com/shiruken/admin-tattler/blob/main/assets/avatar.jpg) used for Discord messages was generated using Image Creator from Microsoft Designer.*

@@ -739,6 +739,7 @@ describe("handlers", () => {
         expect.objectContaining({
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          body: expect.stringContaining("https://raw.githubusercontent.com/shiruken/admin-tattler/main/assets/icon.png"),
         })
       );
 

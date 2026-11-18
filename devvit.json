@@ -1,6 +1,9 @@
 {
   "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
   "name": "admin-tattler",
+  "marketingAssets": {
+    "icon": "assets/icon.png"
+  },
   "permissions": {
     "reddit": true,
     "redis": true,
