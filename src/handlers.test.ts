@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { cacheComment, cacheModerators, cachePost, checkModAction } from "./handlers.js";
+import { cacheComment, cacheModerators, cachePost, checkModAction, formatRemovedFallback } from "./handlers.js";
 import type { TriggerContext } from "@devvit/public-api";
 import type { CommentSubmit, ModAction, PostSubmit } from "@devvit/protos";
 
@@ -819,7 +819,7 @@ describe("handlers", () => {
       expect(modmailArgs.bodyMarkdown).toContain("Anti-Evil Operations");
       expect(modmailArgs.bodyMarkdown).toContain("Cached comment text from Redis");
       expect(modmailArgs.bodyMarkdown).toContain("Banned in r/testsub");
-      expect(modmailArgs.bodyMarkdown).toContain("Content Date:");
+      expect(modmailArgs.bodyMarkdown).not.toContain("Content Date:");
 
       // Slack webhook check
       expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -1094,6 +1094,166 @@ describe("handlers", () => {
         expect.any(Error)
       );
       consoleError.mockRestore();
+    });
+
+    it("formats uncached removed comment within 30 days with submission date", async () => {
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const recentTimestamp = new Date("2026-11-15T12:00:00Z").getTime();
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        action: "removecomment",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetComment: {
+          id: "t1_recent_uncached",
+          body: "[ Removed by Reddit ]",
+          createdAt: recentTimestamp,
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+      const modmailArgs = createModInboxConversation.mock.calls[0][0];
+      const expectedDate = new Date(recentTimestamp).toLocaleDateString("fr-CA");
+      expect(modmailArgs.bodyMarkdown).toContain(
+        `**Comment:**\n> [ Removed by Reddit ] (Submitted ${expectedDate}, not cached)`
+      );
+    });
+
+    it("formats uncached removed post with both title and body removed", async () => {
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const oldTimestamp = new Date("2024-05-12T12:00:00Z").getTime();
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        action: "removelink",
+        moderator: { name: "Reddit Legal" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetPost: {
+          id: "t3_old_uncached",
+          title: "[ Removed by Reddit ]",
+          selftext: "[ Removed by Reddit ]",
+          createdAt: oldTimestamp,
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+      const modmailArgs = createModInboxConversation.mock.calls[0][0];
+      expect(modmailArgs.bodyMarkdown).toContain(
+        `**Title:**\n> [ Removed by Reddit ] (Submitted 2024-05-12, exceeds 30-day cache)`
+      );
+      expect(modmailArgs.bodyMarkdown).toContain(
+        `**Body:**\n> [ Removed by Reddit ]`
+      );
+      // Ensure the note is not duplicated on the body
+      expect(modmailArgs.bodyMarkdown).not.toContain(
+        `**Body:**\n> [ Removed by Reddit ] (Submitted 2024-05-12`
+      );
+    });
+
+    it("formats uncached removed post when only body was removed", async () => {
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const recentTimestamp = new Date("2026-11-16T12:00:00Z").getTime();
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        action: "removelink",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetPost: {
+          id: "t3_body_only_removed",
+          title: "Intact Post Title",
+          selftext: "[ Removed by Reddit ]",
+          createdAt: recentTimestamp,
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+      const modmailArgs = createModInboxConversation.mock.calls[0][0];
+      const expectedDate = new Date(recentTimestamp).toLocaleDateString("fr-CA");
+      expect(modmailArgs.bodyMarkdown).toContain(`**Title:**\n> Intact Post Title`);
+      expect(modmailArgs.bodyMarkdown).toContain(
+        `**Body:**\n> [ Removed by Reddit ] (Submitted ${expectedDate}, not cached)`
+      );
+    });
+  });
+
+  describe("formatRemovedFallback", () => {
+    it("formats fallback for submissions older than 30 days", () => {
+      const oldTime = Date.now() - 45 * 24 * 60 * 60 * 1000;
+      const expectedDate = new Date(oldTime).toLocaleDateString("fr-CA");
+      expect(formatRemovedFallback(oldTime)).toBe(
+        `[ Removed by Reddit ] (Submitted ${expectedDate}, exceeds 30-day cache)`
+      );
+    });
+
+    it("formats fallback for submissions within 30 days", () => {
+      const recentTime = Date.now() - 5 * 24 * 60 * 60 * 1000;
+      const expectedDate = new Date(recentTime).toLocaleDateString("fr-CA");
+      expect(formatRemovedFallback(recentTime)).toBe(
+        `[ Removed by Reddit ] (Submitted ${expectedDate}, not cached)`
+      );
+    });
+
+    it("formats fallback when createdAt is undefined", () => {
+      expect(formatRemovedFallback(undefined)).toBe("[ Removed by Reddit ] (Not cached)");
     });
   });
 });

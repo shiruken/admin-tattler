@@ -131,23 +131,30 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       }
       if (targetPost.title) {
         title = targetPost.title;
-        if (title == "[ Removed by Reddit ]") {
-          const cachedPost = await getCachedPost(targetPost.id, context);
-          if (cachedPost) {
-            if (cachedPost.title) {
-              title = cachedPost.title;
-              usedCachedTitle = true;
-            }
-            if (cachedPost.url && !cachedPost.url.includes(targetPost.id.slice(3))) {
-              url = cachedPost.url;
-              usedCachedURL = true;
-            }
-            if (cachedPost.body) {
-              body = cachedPost.body;
-              usedCachedBody = true;
-            }
+      }
+
+      if (title == "[ Removed by Reddit ]" || body == "[ Removed by Reddit ]") {
+        const cachedPost = await getCachedPost(targetPost.id, context);
+        if (cachedPost) {
+          if (title == "[ Removed by Reddit ]" && cachedPost.title) {
+            title = cachedPost.title;
+            usedCachedTitle = true;
+          }
+          if (cachedPost.url && !cachedPost.url.includes(targetPost.id.slice(3))) {
+            url = cachedPost.url;
+            usedCachedURL = true;
+          }
+          if (cachedPost.body) {
+            body = cachedPost.body;
+            usedCachedBody = true;
           }
         }
+      }
+
+      if (title == "[ Removed by Reddit ]") {
+        title = formatRemovedFallback(createdAt);
+      } else if (body == "[ Removed by Reddit ]") {
+        body = formatRemovedFallback(createdAt);
       }
     }
 
@@ -166,6 +173,8 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
           if (cachedComment) {
             body = cachedComment;
             usedCachedBody = true;
+          } else {
+            body = formatRemovedFallback(createdAt);
           }
         }
       }
@@ -195,19 +204,12 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       modDisplayName = "Anti-Evil Operations";
     }
 
-    let createdAtText = "";
-    if (createdAt && Date.now() - createdAt > CACHE_DURATION*1000) {
-      const createdAtDate = new Date(createdAt);
-      createdAtText = createdAtDate.toLocaleDateString("fr-CA"); // YYYY-MM-DD
-    }
-
     // Send Modmail
     if (settings.sendModmail) {
       let msg = `**${modDisplayName}** has performed an action in r/${subredditName}:\n\n` +
                 `* **Action:** \`${action}\`` +
                 (permalink ? `\n* **Permalink:** ${permalink}` : "") +
                 (user ? `\n* **Target User:** u/${user}${ is_banned ? ` (Banned in r/${subredditName})`: "" }` : "") +
-                (createdAtText ? `\n* **Content Date:** ${createdAtText}` : "") + 
                 (url ? `\n* **URL${ usedCachedURL ? " (Cached)" : "" }:** ${url}` : "");
 
       if (!settings.excludeContext && title) {
@@ -257,7 +259,6 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
                     text: `*Action:* \`${action}\`` +
                           (permalink ? `\n*Permalink:* ${permalink}` : "") +
                           (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>${ is_banned ? ` (Banned in r/${subredditName})`: "" }` : "") +
-                          (createdAtText ? `\n*Content Date:* ${createdAtText}` : "") +
                           (url ? `\n*URL${ usedCachedURL ? " (Cached)" : "" }:* ${url}` : "") +
                           (!settings.excludeContext && title ? `\n*Title${ usedCachedTitle ? " (Cached)" : "" }:* ${title}` : "") +
                           (!settings.excludeContext && body ? `\n*Body${ usedCachedBody ? " (Cached)" : "" }:* ${body.slice(0, 2500)}` : "")
@@ -319,13 +320,6 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         discordPayload.embeds[0].fields.push({
           name: "Target User",
           value: `[u/${user}](https://www.reddit.com/user/${user})${ is_banned ? ` (Banned in r/${subredditName})`: "" }`
-        });
-      }
-
-      if (createdAtText) {
-        discordPayload.embeds[0].fields.push({
-          name: "Content Date",
-          value: createdAtText
         });
       }
 
@@ -525,4 +519,20 @@ function quoteText(text: string): string {
     .split("\n")
     .map((line) => (line.length ? `> ${line}` : ">"))
     .join("\n");
+}
+
+/**
+ * Format fallback text for content removed by Reddit that was not found in cache
+ * @param createdAt Optional creation timestamp in milliseconds
+ * @returns Formatted fallback text string
+ */
+export function formatRemovedFallback(createdAt?: number): string {
+  if (createdAt) {
+    const dateStr = new Date(createdAt).toLocaleDateString("fr-CA");
+    if (Date.now() - createdAt > CACHE_DURATION * 1000) {
+      return `[ Removed by Reddit ] (Submitted ${dateStr}, exceeds 30-day cache)`;
+    }
+    return `[ Removed by Reddit ] (Submitted ${dateStr}, not cached)`;
+  }
+  return "[ Removed by Reddit ] (Not cached)";
 }
