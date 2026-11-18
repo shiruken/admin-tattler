@@ -135,8 +135,9 @@ describe("handlers", () => {
   });
 
   describe("cacheModerators", () => {
-    it("fetches moderator usernames and stores them in Redis", async () => {
+    it("fetches moderator usernames and stores them in Redis with 24-hour expiration", async () => {
       const redisSet = vi.fn().mockResolvedValue("OK");
+      const redisExpire = vi.fn().mockResolvedValue(1);
       const mockModerators = [{ username: "mod1" }, { username: "mod2" }];
 
       async function* getModeratorsGen() {
@@ -154,12 +155,15 @@ describe("handlers", () => {
         },
         redis: {
           set: redisSet,
+          expire: redisExpire,
         },
       } as unknown as TriggerContext;
 
-      await cacheModerators(mockContext);
+      const result = await cacheModerators(mockContext);
 
+      expect(result).toEqual(["mod1", "mod2"]);
       expect(redisSet).toHaveBeenCalledWith("mods", "mod1,mod2");
+      expect(redisExpire).toHaveBeenCalledWith("mods", 86400);
     });
 
     it("throws when fetching moderators fails", async () => {
@@ -258,23 +262,144 @@ describe("handlers", () => {
       ).rejects.toThrow("Missing `subreddit` from ModActionTrigger event");
     });
 
-    it("throws if cached modlist is empty", async () => {
+    it("refreshes modlist when cache is empty or expired", async () => {
+      async function* getModsGen() {
+        yield { username: "autofetched_mod" };
+      }
+      const createModInboxConversation = vi.fn();
+      const redisSet = vi.fn().mockResolvedValue("OK");
+      const redisExpire = vi.fn().mockResolvedValue(1);
+
       const mockContext = {
         settings: {
           getAll: vi.fn().mockResolvedValue(baseSettings),
         },
         redis: {
           get: vi.fn().mockResolvedValue(null),
+          set: redisSet,
+          expire: redisExpire,
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue(getModsGen()),
+          }),
+          modMail: { createModInboxConversation },
         },
       } as unknown as TriggerContext;
 
       const event: ModAction = {
         action: "removelink",
-        moderator: { name: "admin_user" },
+        moderator: { name: "autofetched_mod" },
         subreddit: { id: "t5_test", name: "testsub" },
       } as unknown as ModAction;
 
-      await expect(checkModAction(event, mockContext)).rejects.toThrow("Cached modlist is empty");
+      await checkModAction(event, mockContext);
+
+      expect(redisSet).toHaveBeenCalledWith("mods", "autofetched_mod");
+      expect(redisExpire).toHaveBeenCalledWith("mods", 86400);
+      expect(createModInboxConversation).not.toHaveBeenCalled();
+    });
+
+    it("performs live refresh when acting user is not in cached modlist and skips if confirmed", async () => {
+      async function* getFreshModsGen() {
+        yield { username: "existing_mod" };
+        yield { username: "newly_added_mod" };
+      }
+      const createModInboxConversation = vi.fn();
+      const redisSet = vi.fn().mockResolvedValue("OK");
+      const redisExpire = vi.fn().mockResolvedValue(1);
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockResolvedValue("existing_mod"), // cached list is missing newly_added_mod
+          set: redisSet,
+          expire: redisExpire,
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue(getFreshModsGen()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        action: "removelink",
+        moderator: { name: "newly_added_mod" },
+        subreddit: { id: "t5_test", name: "testsub" },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+
+      // Verify fresh modlist was fetched and saved
+      expect(redisSet).toHaveBeenCalledWith("mods", "existing_mod,newly_added_mod");
+      // Verify no modmail alert sent because newly_added_mod was confirmed
+      expect(createModInboxConversation).not.toHaveBeenCalled();
+    });
+
+    it("continues to alert if live modlist refresh throws an error", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: true,
+            webhookURL: "",
+            excludeContext: false,
+            addModNote: false,
+          }),
+        },
+        redis: {
+          get: vi.fn().mockResolvedValue("existing_mod"),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockRejectedValue(new Error("Rate limit")),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        action: "removelink",
+        moderator: { name: "suspected_admin" },
+        subreddit: { id: "t5_test", name: "testsub" },
+        targetPost: { id: "t3_post1", title: "Target Post" },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+
+      expect(consoleError).toHaveBeenCalledWith("Error performing live modlist refresh", expect.any(Error));
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+      consoleError.mockRestore();
+    });
+
+    it("matches moderator usernames case-insensitively", async () => {
+      const createModInboxConversation = vi.fn();
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockResolvedValue("LocalMod,SuperMod"),
+        },
+        reddit: {
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        action: "removelink",
+        moderator: { name: "localmod" }, // lowercase variant
+        subreddit: { id: "t5_test", name: "testsub" },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+      expect(createModInboxConversation).not.toHaveBeenCalled();
     });
 
     it("updates cached modlist on modlist change action", async () => {
@@ -295,6 +420,7 @@ describe("handlers", () => {
         },
         redis: {
           set: redisSet,
+          expire: vi.fn().mockResolvedValue(1),
           get: vi.fn().mockResolvedValue("currentmod"),
         },
       } as unknown as TriggerContext;
@@ -320,6 +446,8 @@ describe("handlers", () => {
             if (key === "mods") return Promise.resolve("localmod,supermod");
             return Promise.resolve(null);
           }),
+          set: vi.fn().mockResolvedValue("OK"),
+          expire: vi.fn().mockResolvedValue(1),
         },
         reddit: {
           modMail: { createModInboxConversation },
@@ -353,6 +481,8 @@ describe("handlers", () => {
             if (key === "mods") return Promise.resolve("shiruken,othermod");
             return Promise.resolve(null);
           }),
+          set: vi.fn().mockResolvedValue("OK"),
+          expire: vi.fn().mockResolvedValue(1),
         },
         reddit: {
           modMail: { createModInboxConversation },
@@ -406,8 +536,14 @@ describe("handlers", () => {
         },
         redis: {
           get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+          expire: vi.fn().mockResolvedValue(1),
         },
         reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
           modMail: { createModInboxConversation },
         },
       } as unknown as TriggerContext;
@@ -430,8 +566,14 @@ describe("handlers", () => {
         },
         redis: {
           get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+          expire: vi.fn().mockResolvedValue(1),
         },
         reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
           modMail: { createModInboxConversation },
         },
       } as unknown as TriggerContext;
@@ -465,8 +607,14 @@ describe("handlers", () => {
         },
         redis: {
           get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+          expire: vi.fn().mockResolvedValue(1),
         },
         reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
           modMail: { createModInboxConversation },
         },
       } as unknown as TriggerContext;
@@ -493,6 +641,7 @@ describe("handlers", () => {
         redis: {
           get: vi.fn().mockResolvedValue("other_mod"),
           set: vi.fn().mockResolvedValue("OK"),
+          expire: vi.fn().mockResolvedValue(1),
         },
         reddit: {
           getCurrentSubreddit: vi.fn().mockResolvedValue({
@@ -543,8 +692,14 @@ describe("handlers", () => {
               );
             return Promise.resolve(null);
           }),
+          set: vi.fn().mockResolvedValue("OK"),
+          expire: vi.fn().mockResolvedValue(1),
         },
         reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
           modMail: { createModInboxConversation },
           addModNote,
           getBannedUsers,
@@ -619,8 +774,14 @@ describe("handlers", () => {
             if (key === "t1_comm999") return Promise.resolve("Cached comment text from Redis");
             return Promise.resolve(null);
           }),
+          set: vi.fn().mockResolvedValue("OK"),
+          expire: vi.fn().mockResolvedValue(1),
         },
         reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
           modMail: { createModInboxConversation },
           addModNote,
           getBannedUsers,
@@ -689,8 +850,14 @@ describe("handlers", () => {
         },
         redis: {
           get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+          expire: vi.fn().mockResolvedValue(1),
         },
         reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
           modMail: { createModInboxConversation },
         },
       } as unknown as TriggerContext;
@@ -729,8 +896,14 @@ describe("handlers", () => {
         },
         redis: {
           get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+          expire: vi.fn().mockResolvedValue(1),
         },
         reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
           modMail: {
             createModInboxConversation: vi.fn().mockRejectedValue(new Error("Modmail API fail")),
           },
@@ -780,6 +953,14 @@ describe("handlers", () => {
         },
         redis: {
           get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+          expire: vi.fn().mockResolvedValue(1),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
         },
       } as unknown as TriggerContext;
 

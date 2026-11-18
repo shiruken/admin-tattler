@@ -4,6 +4,7 @@ import { CachedPostData } from "./types.js";
 import { getValidatedSettings } from "./settings.js";
 
 const CACHE_DURATION = 60*60*24*30; // 30 days
+const MODERATOR_CACHE_TTL_SECONDS = 60*60*24; // 24 hours (self-heal missed webhooks)
 
 /**
  * Checks ModAction for Admins
@@ -39,37 +40,64 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     await cacheModerators(context);
   }
 
-  const moderators = await getCachedModerators(context);
+  // Ignore actions by platform bots
+  if (moderatorName == "AutoModerator" || moderatorName == "reddit") {
+    return;
+  }
+
+  // Ignore actions from [deleted] moderators. Should prevent notification 
+  // spam when former moderators delete their content or accounts.
+  if (moderatorName == "[deleted]") {
+    console.log(`Ignored ${action} by ${moderatorName}`);
+    return;
+  }
+
+  // Ignore user removing themselves as moderator
+  if (action == "removemoderator" && moderatorName.toLowerCase() == event.targetUser?.name?.toLowerCase()) {
+    console.log(`Ignored removemoderator by ${moderatorName}`);
+    return;
+  }
+
+  let moderators = await getCachedModerators(context);
+  let isMod = moderators.some((m) => m.toLowerCase() === moderatorName.toLowerCase());
 
   // Check if acting moderator is NOT in modlist (or simulated admin during playtest)
   // Devvit playtest versions contain a 4th prerelease segment (e.g. 0.8.1.2) or a hyphen
   const isPrerelease = (v?: string) => Boolean(v && (v.includes("-") || v.split(".").length > 3));
   const isPlaytestDev =
     subredditName === "admin_tattler_dev" && isPrerelease(context.appVersion);
-  const isAdminAction = !moderators.includes(moderatorName) || isPlaytestDev;
 
+  if (isMod && !isPlaytestDev) {
+    return;
+  }
+
+  // If acting user is not in cached modlist and this is not a known admin/playtest,
+  // perform a live refresh of the modlist to prevent false positives for newly added mods
   if (
-    isAdminAction && 
-    moderatorName != "AutoModerator" && moderatorName != "reddit"
+    !isMod &&
+    !isPlaytestDev &&
+    moderatorName != "Anti-Evil Operations" &&
+    moderatorName != "Reddit Legal" &&
+    moderatorName != "[ Redacted ]"
   ) {
-    // Ignore actions from [deleted] moderators. Should prevent notification 
-    // spam when former moderators delete their content or accounts.
-    if (moderatorName == "[deleted]") {
-      console.log(`Ignored ${action} by ${moderatorName}`);
-      return;
+    console.log(`u/${moderatorName} not found in cached modlist, performing live refresh to verify`);
+    try {
+      moderators = await cacheModerators(context);
+      isMod = moderators.some((m) => m.toLowerCase() === moderatorName.toLowerCase());
+      if (isMod) {
+        console.log(`u/${moderatorName} confirmed as moderator after live refresh; skipping`);
+        return;
+      }
+    } catch (e) {
+      console.error("Error performing live modlist refresh", e);
     }
+  }
 
-    // Ignore user removing themselves as moderator
-    if (action == "removemoderator" && moderatorName == event.targetUser!.name) {
-      console.log(`Ignored removemoderator by ${moderatorName}`);
-      return;
-    }
+  if (isPlaytestDev && isMod) {
+    console.log(`[Playtest] Simulating Admin action for mod u/${moderatorName}`);
+  }
 
-    if (isPlaytestDev && moderators.includes(moderatorName)) {
-      console.log(`[Playtest] Simulating Admin action for mod u/${moderatorName}`);
-    }
-
-    console.log(`Detected ${action} by ${moderatorName}`);
+  console.log(`Detected ${action} by ${moderatorName}`);
 
     let targetID: `t1_${string}` | `t3_${string}` | undefined = undefined;
     let permalink = "";
@@ -329,7 +357,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
     // Add Mod Note for content removals
     if (
-      settings.addModNote && user && user != "AutoModerator" && targetID &&
+      settings.addModNote && user && user.toLowerCase() != "automoderator" && targetID &&
       (
         action == "removelink" || action == "spamlink" ||
         action == "removecomment" || action == "spamcomment"
@@ -346,7 +374,6 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         .then(() => console.log(`Added mod note to ${targetID}`))
         .catch((e) => console.error(`Error adding mod note to ${targetID}`, e));
     }
-  }
 }
 
 /**
@@ -415,10 +442,11 @@ async function getCachedComment(comment_id: string, context: TriggerContext): Pr
 }
 
 /**
- * Cache subreddit modlist
+ * Cache subreddit modlist in Redis with a 24-hour expiration TTL
  * @param context A TriggerContext object
+ * @returns A Promise that resolves to the array of moderator usernames
  */
-export async function cacheModerators(context: TriggerContext) {
+export async function cacheModerators(context: TriggerContext): Promise<string[]> {
   const subreddit = await context.reddit.getCurrentSubreddit();
   const moderators: string[] = [];
   try {
@@ -433,24 +461,31 @@ export async function cacheModerators(context: TriggerContext) {
     throw new Error(`Fetched modlist for r/${subreddit.name} is empty, skipping cache update`);
   }
 
-  // Write string representation of array to Redis
-  await context.redis
-    .set("mods", moderators.toString())
-    .then(() => console.log(`Wrote ${moderators.length} moderators to Redis`))
-    .catch((e) => console.error('Error writing moderators to Redis', e));
+  // Write string representation of array to Redis with 24-hour TTL
+  try {
+    await context.redis.set("mods", moderators.toString());
+    await context.redis.expire("mods", MODERATOR_CACHE_TTL_SECONDS);
+    console.log(`Wrote ${moderators.length} moderators to Redis with ${MODERATOR_CACHE_TTL_SECONDS}s TTL`);
+  } catch (e) {
+    console.error('Error writing moderators to Redis', e);
+  }
+
+  return moderators;
 }
 
 /**
- * Get cached subreddit modlist
+ * Get cached subreddit modlist, automatically refreshing if expired or missing
  * @param context A TriggerContext object
  * @returns A promise that resolves to an array of moderator usernames
  */
 async function getCachedModerators(context: TriggerContext): Promise<string[]> {
-  const moderators = await context.redis.get("mods");
-  if (!moderators) {
-    throw new Error('Cached modlist is empty');
+  const cached = await context.redis.get("mods");
+  if (cached) {
+    return cached.split(","); // Parse string representation of array
   }
-  return moderators.split(","); // Parse string representation of array
+
+  console.log("Cached modlist is empty or expired, refreshing...");
+  return await cacheModerators(context);
 }
 
 /**
