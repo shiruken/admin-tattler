@@ -45,41 +45,17 @@ Mod Notes can (optionally) be added to users whose content was removed by the Re
 * This app does not account for actions taken by Admin accounts that get *added* to a subreddit's mod team.
 * Notifications will be sent when temporary bans expire if the moderator responsible for the original ban has since left the mod team. This app is only aware of *current* moderators and cannot account for the delayed `unbanuser` action that gets scheduled for temporary bans.
 
-## Changelog
+## Recent Updates (v0.8)
 
-*[View Releases on GitHub](https://github.com/shiruken/admin-tattler/releases)*
+* Improved moderator list synchronization to prevent false positive alerts *(New in v0.8.2)*
+* Improved formatting and readability for Modmail notification messages *(New in v0.8.2)*
+* Better handling of actions caused by `[deleted]` moderator accounts
+* Extended post and comment cache duration to 30 days
+* Indicate original content creation date on cache misses
+* Flag banned users in notification messages
+* Option to flag actioned users with a Mod Note
 
-* v0.8
-  * ~~Add setting to fully remove actioned content by performing a secondary removal~~ Disabled because of unintended behavior
-* v0.7
-  * Better handling of actions caused by `[deleted]` moderator accounts
-  * Increase cache duration to 30 days
-  * Indicate original content date on cache misses
-* v0.6
-  * Modmail notifications route into Inbox rather than Mod Discussions
-  * Flag banned users in notification messages
-  * Add setting to flag actioned users with Mod Note
-* v0.5
-  * Improve notification messages for `[ Redacted ]` moderators
-* v0.4
-  * Transition to new (Shreddit) modlog path
-  * Quote post/comment text to improve readability in Modmail
-  * Add setting to exclude post/comment context from notifications
-  * Improve handling of `[ Redacted ]` moderators
-  * Flag when cached content is used in notifications
-  * Include submitted links in post-related notifications
-  * Cache submitted links
-* v0.3
-  * Cache post/comment text for use in notifications
-  * Purge cached content after 14 days
-* v0.2
-  * Include post/comment details whenever available regardless of action type
-  * Ignore moderators demodding themselves
-  * Ignore actions by u/AutoModerator and u/reddit accounts
-  * Watch for actions by any user not in subreddit modlist
-  * Improve notification messages
-* v0.1
-  * Initial Release
+*[View full release history on GitHub](https://github.com/shiruken/admin-tattler/releases)*
 
 ## Links
 
