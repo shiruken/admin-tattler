@@ -5,10 +5,21 @@
   "license": "BSD-3-Clause",
   "type": "module",
   "dependencies": {
-    "@devvit/public-api": "0.11.18"
+    "@devvit/public-api": "0.15.4"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "5.1.0",
+    "devvit": "0.15.4",
     "typescript": "5.8.3",
-    "vitest": "3.2.4"
+    "vitest": "5.1.0"
+  },
+  "scripts": {
+    "dev": "devvit playtest",
+    "deploy": "devvit upload",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run typecheck && npm test"
   }
 }

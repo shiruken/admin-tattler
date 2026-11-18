@@ -1,0 +1,30 @@
+{
+  "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
+  "name": "admin-tattler",
+  "permissions": {
+    "reddit": true,
+    "redis": true,
+    "http": {
+      "enable": true,
+      "domains": [
+        "hooks.slack.com",
+        "discord.com"
+      ]
+    }
+  },
+  "blocks": {
+    "entry": "src/main.ts",
+    "triggers": [
+      "onAppInstall",
+      "onAppUpgrade",
+      "onCommentSubmit",
+      "onCommentUpdate",
+      "onModAction",
+      "onPostSubmit",
+      "onPostUpdate"
+    ]
+  },
+  "dev": {
+    "subreddit": "admin_tattler_dev"
+  }
+}
