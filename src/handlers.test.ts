@@ -1950,6 +1950,149 @@ describe("handlers", () => {
         })
       );
     });
+
+    it("ignores admin actions cleanly when all reporting routes and mod notes are disabled", async () => {
+      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const redisSet = vi.fn().mockResolvedValue("OK");
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: false,
+            webhookURL: "",
+            excludeContext: false,
+            addModNote: false,
+          }),
+        },
+        redis: {
+          get: vi.fn().mockResolvedValue("localmod"),
+          set: redisSet,
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        id: "ModAction_disabled_routes",
+        action: "removelink",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetPost: { id: "t3_post_disabled", title: "Test" },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+
+      expect(debugSpy).toHaveBeenCalledWith(
+        "[action] Ignored removelink by Anti-Evil Operations: all reporting routes and mod notes are disabled"
+      );
+      expect(createModInboxConversation).not.toHaveBeenCalled();
+      expect(redisSet).not.toHaveBeenCalled();
+      debugSpy.mockRestore();
+    });
+
+    it("adds mod note when addModNote is true even if all reporting routes are disabled", async () => {
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const addModNote = vi.fn().mockResolvedValue(undefined);
+      const redisSet = vi.fn().mockResolvedValue("OK");
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: false,
+            webhookURL: "",
+            excludeContext: false,
+            addModNote: true,
+          }),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            return Promise.resolve(null);
+          }),
+          set: redisSet,
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          getBannedUsers: vi.fn().mockResolvedValue({ all: vi.fn().mockResolvedValue([]) }),
+          modMail: { createModInboxConversation },
+          addModNote,
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        id: "ModAction_modnote_only",
+        action: "removelink",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetUser: { id: "t2_targetuser", name: "spammer" },
+        targetPost: { id: "t3_post_modnote_only", title: "Test Spam" },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+
+      expect(addModNote).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subreddit: "testsub",
+          user: "spammer",
+          redditId: "t3_post_modnote_only",
+          note: "Anti-Evil Operations Removal",
+        })
+      );
+      expect(createModInboxConversation).not.toHaveBeenCalled();
+    });
+
+    it("updates cached modlist on modlist change even when all reporting routes are disabled", async () => {
+      const redisSet = vi.fn().mockResolvedValue("OK");
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: false,
+            webhookURL: "",
+            excludeContext: false,
+            addModNote: false,
+          }),
+        },
+        redis: {
+          get: vi.fn().mockResolvedValue("localmod"),
+          set: redisSet,
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() {
+              yield { username: "localmod" };
+              yield { username: "newmod" };
+            })()),
+          }),
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        action: "addmoderator",
+        moderator: { name: "localmod" },
+        targetUser: { id: "t2_newmod", name: "newmod" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+
+      // Verify modlist was refreshed and written to Redis
+      expect(redisSet).toHaveBeenCalledWith(
+        "mods",
+        "localmod,newmod",
+        expect.objectContaining({ expiration: expect.any(Date) })
+      );
+    });
   });
 
   describe("formatRemovedFallback", () => {

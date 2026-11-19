@@ -50,14 +50,10 @@ function validateWebhookURL(event: SettingsFormFieldValidatorEvent<string>): voi
 }
 
 /**
- * Load, validate, and return current app configuration settings 
+ * Load and return current app configuration settings 
  * @param context A TriggerContext object
  * @returns A Promise that resolves to a {@link Settings} object
  */
 export async function getValidatedSettings(context: TriggerContext): Promise<Settings> {
-  const settings = await context.settings.getAll() as Settings;
-  if (!settings.sendModmail && !settings.webhookURL) {
-    throw new Error('All reporting routes are disabled in app configuration');
-  }
-  return settings;
+  return await context.settings.getAll() as Settings;
 }

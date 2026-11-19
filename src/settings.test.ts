@@ -87,7 +87,7 @@ describe("settings", () => {
       expect(result.webhookURL).toBe("https://discord.com/api/webhooks/123/abc");
     });
 
-    it("throws when all reporting routes are disabled", async () => {
+    it("returns settings even when all reporting routes are disabled", async () => {
       const mockContext = {
         settings: {
           getAll: vi.fn().mockResolvedValue({
@@ -99,9 +99,10 @@ describe("settings", () => {
         },
       } as unknown as TriggerContext;
 
-      await expect(getValidatedSettings(mockContext)).rejects.toThrow(
-        "All reporting routes are disabled in app configuration"
-      );
+      const result = await getValidatedSettings(mockContext);
+      expect(result.sendModmail).toBe(false);
+      expect(result.webhookURL).toBe("");
+      expect(result.addModNote).toBe(false);
     });
   });
 });

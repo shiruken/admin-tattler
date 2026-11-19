@@ -105,6 +105,12 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     logger.action.info(`[Playtest] Simulating Admin action for mod u/${moderatorName}`);
   }
 
+  // If all reporting routes and mod notes are disabled, skip processing
+  if (!settings.sendModmail && !settings.webhookURL && !settings.addModNote) {
+    logger.action.debug(`Ignored ${action} by ${moderatorName}: all reporting routes and mod notes are disabled`);
+    return;
+  }
+
   // Deduplicate mod actions to prevent duplicate alerts if Devvit redelivers the event
   const targetIdentifier = event.targetPost?.id ?? event.targetComment?.id ?? event.targetUser?.name ?? "";
   const timestamp = event.actionedAt instanceof Date ? event.actionedAt.getTime() : (event.actionedAt ?? "");
