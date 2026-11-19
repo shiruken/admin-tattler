@@ -23,9 +23,11 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
   const moderator = event.moderator;
   if (!moderator || !moderator.name) {
-    throw new Error('Missing `moderator` from ModActionTrigger event');
+    logger.action.warn(`Missing or empty moderator in ${action} ModActionTrigger event; skipping`);
+    return;
   }
   const moderatorName = moderator.name;
+  const modLower = moderatorName.toLowerCase();
 
   const subreddit = event.subreddit;
   if (!subreddit || !subreddit.name) {
@@ -45,20 +47,20 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
   }
 
   // Ignore actions by platform bots
-  if (moderatorName == "AutoModerator" || moderatorName == "reddit") {
+  if (modLower === "automoderator" || modLower === "reddit") {
     logger.action.debug(`Ignored ${action} by platform bot ${moderatorName}`);
     return;
   }
 
   // Ignore actions from [deleted] moderators. Should prevent notification 
   // spam when former moderators delete their content or accounts.
-  if (moderatorName == "[deleted]") {
+  if (modLower === "[deleted]") {
     logger.action.debug(`Ignored ${action} by [deleted] moderator`);
     return;
   }
 
   // Ignore user removing themselves as moderator
-  if (action == "removemoderator" && moderatorName.toLowerCase() == event.targetUser?.name?.toLowerCase()) {
+  if (action == "removemoderator" && modLower === event.targetUser?.name?.toLowerCase()) {
     logger.action.info(`Ignored removemoderator by ${moderatorName} on self`);
     return;
   }

@@ -288,11 +288,27 @@ describe("handlers", () => {
       );
     });
 
-    it("throws if missing moderator", async () => {
+    it("logs warning and returns early if missing moderator", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
       const mockContext = {} as TriggerContext;
-      await expect(
-        checkModAction({ action: "removelink" } as ModAction, mockContext)
-      ).rejects.toThrow("Missing `moderator` from ModActionTrigger event");
+      await checkModAction({ action: "removelink" } as ModAction, mockContext);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[action] Missing or empty moderator in removelink ModActionTrigger event; skipping"
+      );
+      warnSpy.mockRestore();
+    });
+
+    it("logs warning and returns early if moderator name is empty", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const mockContext = {} as TriggerContext;
+      await checkModAction(
+        { action: "removelink", moderator: { name: "" } } as unknown as ModAction,
+        mockContext
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[action] Missing or empty moderator in removelink ModActionTrigger event; skipping"
+      );
+      warnSpy.mockRestore();
     });
 
     it("throws if missing subreddit", async () => {
@@ -640,6 +656,26 @@ describe("handlers", () => {
         {
           action: "removelink",
           moderator: { name: "reddit" },
+          subreddit: { id: "t5_test", name: "testsub" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(createModInboxConversation).not.toHaveBeenCalled();
+
+      await checkModAction(
+        {
+          action: "removelink",
+          moderator: { name: "Reddit" },
+          subreddit: { id: "t5_test", name: "testsub" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(createModInboxConversation).not.toHaveBeenCalled();
+
+      await checkModAction(
+        {
+          action: "removelink",
+          moderator: { name: "automoderator" },
           subreddit: { id: "t5_test", name: "testsub" },
         } as unknown as ModAction,
         mockContext
