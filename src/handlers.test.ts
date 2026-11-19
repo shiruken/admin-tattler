@@ -1645,6 +1645,185 @@ describe("handlers", () => {
       );
       fetchSpy.mockRestore();
     });
+
+    it("deduplicates mod actions when event.id matches a recently processed action", async () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      let dedupSetCount = 0;
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockImplementation((key: string) => {
+            if (key.startsWith("dedup:action:")) {
+              dedupSetCount++;
+              // First call succeeds ("OK"), second call fails (null/undefined)
+              return dedupSetCount === 1 ? Promise.resolve("OK") : Promise.resolve(undefined);
+            }
+            return Promise.resolve("OK");
+          }),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        id: "ModAction_unique123",
+        action: "removelink",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetPost: {
+          id: "t3_post_dedup",
+          title: "Some Title",
+        },
+      } as unknown as ModAction;
+
+      // First run: should process and send modmail
+      await checkModAction(event, mockContext);
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+      expect(mockContext.redis.set).toHaveBeenCalledWith(
+        "dedup:action:id:ModAction_unique123",
+        "1",
+        expect.objectContaining({ nx: true, expiration: expect.any(Date) })
+      );
+      expect(debugSpy).toHaveBeenCalledWith(
+        "[action] Stored deduplication key dedup:action:id:ModAction_unique123"
+      );
+
+      // Second run (duplicate trigger): should be ignored
+      await checkModAction(event, mockContext);
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1); // Still 1, not 2
+      expect(logSpy).toHaveBeenCalledWith(
+        "[action] Ignored duplicate removelink action (dedup:action:id:ModAction_unique123)"
+      );
+      debugSpy.mockRestore();
+      logSpy.mockRestore();
+    });
+
+    it("deduplicates mod actions using fallback composite key when event.id is missing", async () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      let dedupSetCount = 0;
+      const actionDate = new Date("2026-11-18T12:00:00Z");
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockImplementation((key: string) => {
+            if (key.startsWith("dedup:action:")) {
+              dedupSetCount++;
+              return dedupSetCount === 1 ? Promise.resolve("OK") : Promise.resolve("");
+            }
+            return Promise.resolve("OK");
+          }),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        action: "removecomment",
+        actionedAt: actionDate,
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetComment: {
+          id: "t1_comm_dedup",
+          body: "Comment Body",
+        },
+      } as unknown as ModAction;
+
+      const expectedKey = `dedup:action:removecomment:t1_comm_dedup:${actionDate.getTime()}`;
+
+      // First run: should process
+      await checkModAction(event, mockContext);
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+      expect(mockContext.redis.set).toHaveBeenCalledWith(
+        expectedKey,
+        "1",
+        expect.objectContaining({ nx: true, expiration: expect.any(Date) })
+      );
+
+      // Second run (duplicate trigger): should be ignored
+      await checkModAction(event, mockContext);
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+      expect(logSpy).toHaveBeenCalledWith(
+        `[action] Ignored duplicate removecomment action (${expectedKey})`
+      );
+      logSpy.mockRestore();
+    });
+
+    it("continues to alert if Redis error occurs during deduplication check (fails open)", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockImplementation((key: string) => {
+            if (key.startsWith("dedup:action:")) {
+              return Promise.reject(new Error("Redis dedup connection timeout"));
+            }
+            return Promise.resolve("OK");
+          }),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        id: "ModAction_failopen",
+        action: "removelink",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetPost: {
+          id: "t3_post_failopen",
+          title: "Fail Open Title",
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[action] Error checking action deduplication for dedup:action:id:ModAction_failopen",
+        expect.any(Error)
+      );
+      // Alerts should still be sent even if Redis deduplication failed
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+      errorSpy.mockRestore();
+    });
   });
 
   describe("formatRemovedFallback", () => {

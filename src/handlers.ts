@@ -8,6 +8,7 @@ const CACHE_DURATION = 60*60*24*30; // 30 days
 const MODERATOR_CACHE_TTL_SECONDS = 60*60*24; // 24 hours (self-heal missed webhooks)
 const RECENT_SUBMISSION_RETRY_WINDOW_MS = 60_000; // 60 seconds
 const RETRY_DELAY_MS = 1000; // 1 second
+const DEDUP_CACHE_TTL_SECONDS = 60*60*24; // 24 hours (1 day)
 
 /**
  * Checks ModAction for Admins
@@ -100,6 +101,26 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
   if (isPlaytestDev && isMod) {
     logger.action.info(`[Playtest] Simulating Admin action for mod u/${moderatorName}`);
+  }
+
+  // Deduplicate mod actions to prevent duplicate alerts if Devvit redelivers the event
+  const targetIdentifier = event.targetPost?.id ?? event.targetComment?.id ?? event.targetUser?.name ?? "";
+  const timestamp = event.actionedAt instanceof Date ? event.actionedAt.getTime() : (event.actionedAt ?? "");
+  const dedupId = event.id ? `id:${event.id}` : `${action}:${targetIdentifier}:${timestamp}`;
+  const dedupKey = `dedup:action:${dedupId}`;
+
+  try {
+    const isNewAction = await context.redis.set(dedupKey, "1", {
+      nx: true,
+      expiration: new Date(Date.now() + DEDUP_CACHE_TTL_SECONDS * 1000),
+    });
+    if (!isNewAction) {
+      logger.action.info(`Ignored duplicate ${action} action (${dedupKey})`);
+      return;
+    }
+    logger.action.debug(`Stored deduplication key ${dedupKey}`);
+  } catch (e) {
+    logger.action.error(`Error checking action deduplication for ${dedupKey}`, e);
   }
 
   logger.action.info(`Detected ${action} by ${moderatorName}`);
