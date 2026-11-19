@@ -1283,6 +1283,124 @@ describe("handlers", () => {
       );
     });
 
+    it("retries fetching cached post when created recently and uncached on first lookup", async () => {
+      vi.useFakeTimers();
+      try {
+        const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+        let postFetchCount = 0;
+
+        const mockContext = {
+          settings: {
+            getAll: vi.fn().mockResolvedValue(baseSettings),
+          },
+          redis: {
+            get: vi.fn().mockImplementation((key: string) => {
+              if (key === "mods") return Promise.resolve("localmod");
+              if (key === "t3_race_post") {
+                postFetchCount++;
+                if (postFetchCount === 1) return Promise.resolve(null);
+                return Promise.resolve(
+                  JSON.stringify({
+                    title: "Retried Post Title",
+                    body: "Retried Post Body",
+                  })
+                );
+              }
+              return Promise.resolve(null);
+            }),
+            set: vi.fn().mockResolvedValue("OK"),
+          },
+          reddit: {
+            getCurrentSubreddit: vi.fn().mockResolvedValue({
+              name: "testsub",
+              getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+            }),
+            modMail: { createModInboxConversation },
+          },
+        } as unknown as TriggerContext;
+
+        const event: ModAction = {
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: {
+            id: "t3_race_post",
+            title: "[ Removed by Reddit ]",
+            selftext: "[ Removed by Reddit ]",
+            createdAt: Date.now() - 2000,
+          },
+        } as unknown as ModAction;
+
+        const actionPromise = checkModAction(event, mockContext);
+        await vi.advanceTimersByTimeAsync(1000);
+        await actionPromise;
+
+        expect(postFetchCount).toBe(2);
+        const modmailArgs = createModInboxConversation.mock.calls[0][0];
+        expect(modmailArgs.bodyMarkdown).toContain("Retried Post Title");
+        expect(modmailArgs.bodyMarkdown).toContain("Retried Post Body");
+        expect(modmailArgs.bodyMarkdown).toContain("Title (Cached)");
+        expect(modmailArgs.bodyMarkdown).toContain("Body (Cached)");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("retries fetching cached comment when created recently and uncached on first lookup", async () => {
+      vi.useFakeTimers();
+      try {
+        const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+        let commentFetchCount = 0;
+
+        const mockContext = {
+          settings: {
+            getAll: vi.fn().mockResolvedValue(baseSettings),
+          },
+          redis: {
+            get: vi.fn().mockImplementation((key: string) => {
+              if (key === "mods") return Promise.resolve("localmod");
+              if (key === "t1_race_comm") {
+                commentFetchCount++;
+                if (commentFetchCount === 1) return Promise.resolve(null);
+                return Promise.resolve("Retried Comment Body");
+              }
+              return Promise.resolve(null);
+            }),
+            set: vi.fn().mockResolvedValue("OK"),
+          },
+          reddit: {
+            getCurrentSubreddit: vi.fn().mockResolvedValue({
+              name: "testsub",
+              getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+            }),
+            modMail: { createModInboxConversation },
+          },
+        } as unknown as TriggerContext;
+
+        const event: ModAction = {
+          action: "removecomment",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: {
+            id: "t1_race_comm",
+            body: "[ Removed by Reddit ]",
+            createdAt: Date.now() - 1500,
+          },
+        } as unknown as ModAction;
+
+        const actionPromise = checkModAction(event, mockContext);
+        await vi.advanceTimersByTimeAsync(1000);
+        await actionPromise;
+
+        expect(commentFetchCount).toBe(2);
+        const modmailArgs = createModInboxConversation.mock.calls[0][0];
+        expect(modmailArgs.bodyMarkdown).toContain("Retried Comment Body");
+        expect(modmailArgs.bodyMarkdown).toContain("Comment (Cached)");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("handles Redis read errors in getCachedPost gracefully and falls back to un-cached formatting", async () => {
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       const createModInboxConversation = vi.fn().mockResolvedValue(undefined);

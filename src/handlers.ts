@@ -6,6 +6,8 @@ import { logger } from "./logger.js";
 
 const CACHE_DURATION = 60*60*24*30; // 30 days
 const MODERATOR_CACHE_TTL_SECONDS = 60*60*24; // 24 hours (self-heal missed webhooks)
+const RECENT_SUBMISSION_RETRY_WINDOW_MS = 60_000; // 60 seconds
+const RETRY_DELAY_MS = 1000; // 1 second
 
 /**
  * Checks ModAction for Admins
@@ -134,7 +136,12 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       }
 
       if (title == "[ Removed by Reddit ]" || body == "[ Removed by Reddit ]") {
-        const cachedPost = await getCachedPost(targetPost.id, context);
+        let cachedPost = await getCachedPost(targetPost.id, context);
+        if (!cachedPost && createdAt && Math.abs(Date.now() - createdAt) < RECENT_SUBMISSION_RETRY_WINDOW_MS) {
+          logger.cache.debug(`Post ${targetPost.id} was recently created; retrying cache lookup in 1s`);
+          await sleep(RETRY_DELAY_MS);
+          cachedPost = await getCachedPost(targetPost.id, context);
+        }
         if (cachedPost) {
           if (title == "[ Removed by Reddit ]" && cachedPost.title) {
             title = cachedPost.title;
@@ -169,7 +176,12 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       if (targetComment.body) {
         body = targetComment.body;
         if (body == "[ Removed by Reddit ]") {
-          const cachedComment = await getCachedComment(targetComment.id, context);
+          let cachedComment = await getCachedComment(targetComment.id, context);
+          if (!cachedComment && createdAt && Math.abs(Date.now() - createdAt) < RECENT_SUBMISSION_RETRY_WINDOW_MS) {
+            logger.cache.debug(`Comment ${targetComment.id} was recently created; retrying cache lookup in 1s`);
+            await sleep(RETRY_DELAY_MS);
+            cachedComment = await getCachedComment(targetComment.id, context);
+          }
           if (cachedComment) {
             body = cachedComment;
             usedCachedBody = true;
@@ -550,6 +562,14 @@ function quoteText(text: string): string {
     .split("\n")
     .map((line) => (line.length ? `> ${line}` : ">"))
     .join("\n");
+}
+
+/**
+ * Pause execution for specified milliseconds
+ * @param ms Milliseconds to sleep
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
