@@ -42,7 +42,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     action == "acceptmoderatorinvite" || action == "addmoderator" ||
     action == "removemoderator" || action == "reordermoderators"
   ) {
-    logger.modlist.info(`Updating cached modlist on ${action} by ${moderatorName}`);
+    logger.modlist.debug(`Updating cached modlist on ${action} by ${moderatorName}`);
     await cacheModerators(context);
   }
 
@@ -61,7 +61,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
   // Ignore user removing themselves as moderator
   if (action == "removemoderator" && modLower === event.targetUser?.name?.toLowerCase()) {
-    logger.action.info(`Ignored removemoderator by ${moderatorName} on self`);
+    logger.action.debug(`Ignored removemoderator by ${moderatorName} on self`);
     return;
   }
 
@@ -88,12 +88,12 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     moderatorName != "Reddit Legal" &&
     moderatorName != "[ Redacted ]"
   ) {
-    logger.action.info(`u/${moderatorName} not found in cached modlist, performing live refresh to verify`);
+    logger.action.debug(`u/${moderatorName} not found in cached modlist, performing live refresh to verify`);
     try {
       moderators = await cacheModerators(context);
       isMod = moderators.some((m) => m.toLowerCase() === moderatorName.toLowerCase());
       if (isMod) {
-        logger.action.info(`u/${moderatorName} confirmed as moderator after live refresh; skipping`);
+        logger.action.debug(`u/${moderatorName} confirmed as moderator after live refresh; skipping`);
         return;
       }
     } catch (e) {
@@ -588,7 +588,7 @@ async function getCachedModerators(context: TriggerContext): Promise<string[]> {
     return moderators;
   }
 
-  logger.modlist.info("Cached modlist is empty or expired, refreshing...");
+  logger.modlist.debug("Cached modlist is empty or expired, refreshing...");
   return await cacheModerators(context);
 }
 
