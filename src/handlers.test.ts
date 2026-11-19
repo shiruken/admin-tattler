@@ -1282,6 +1282,144 @@ describe("handlers", () => {
         `**Body:**\n> [ Removed by Reddit ] (Submitted ${expectedDate}, not cached)`
       );
     });
+
+    it("handles Redis read errors in getCachedPost gracefully and falls back to un-cached formatting", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const recentTimestamp = new Date("2026-11-16T12:00:00Z").getTime();
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            if (key === "t3_err_post") return Promise.reject(new Error("Redis connection failure"));
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        action: "removelink",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetPost: {
+          id: "t3_err_post",
+          title: "[ Removed by Reddit ]",
+          createdAt: recentTimestamp,
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[cache] Error fetching cached post data for t3_err_post",
+        expect.any(Error)
+      );
+      const modmailArgs = createModInboxConversation.mock.calls[0][0];
+      expect(modmailArgs.bodyMarkdown).toContain("[ Removed by Reddit ] (Submitted 2026-11-16, not cached)");
+      errorSpy.mockRestore();
+    });
+
+    it("handles Redis read errors in getCachedComment gracefully and falls back to un-cached formatting", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const recentTimestamp = new Date("2026-11-16T12:00:00Z").getTime();
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            if (key === "t1_err_comm") return Promise.reject(new Error("Redis connection failure"));
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        action: "removecomment",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetComment: {
+          id: "t1_err_comm",
+          body: "[ Removed by Reddit ]",
+          createdAt: recentTimestamp,
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[cache] Error fetching cached comment data for t1_err_comm",
+        expect.any(Error)
+      );
+      const modmailArgs = createModInboxConversation.mock.calls[0][0];
+      expect(modmailArgs.bodyMarkdown).toContain("[ Removed by Reddit ] (Submitted 2026-11-16, not cached)");
+      errorSpy.mockRestore();
+    });
+
+    it("handles Redis read errors in getCachedModerators gracefully and refreshes modlist from API", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.reject(new Error("Redis modlist read timeout"));
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        action: "removelink",
+        moderator: { name: "localmod" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetPost: {
+          id: "t3_post_mod_action",
+          title: "Some Title",
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[modlist] Error fetching cached modlist from Redis",
+        expect.any(Error)
+      );
+      // Because localmod was fetched live from API, the action was ignored and no modmail sent
+      expect(createModInboxConversation).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
   });
 
   describe("formatRemovedFallback", () => {

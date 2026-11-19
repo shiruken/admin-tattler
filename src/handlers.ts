@@ -419,7 +419,13 @@ export async function cachePost(event: PostSubmit | PostUpdate, context: Trigger
  * @returns A Promise that resolves to a {@link CachedPostData} object containing the cached post text
  */
 async function getCachedPost(post_id: string, context: TriggerContext): Promise<CachedPostData | undefined> {
-  const value = await context.redis.get(post_id);
+  let value: string | undefined;
+  try {
+    value = await context.redis.get(post_id);
+  } catch (e) {
+    logger.cache.error(`Error fetching cached post data for ${post_id}`, e);
+    return undefined;
+  }
   let cachedPost: CachedPostData | undefined = undefined;
   if (value) {
     try {
@@ -463,7 +469,13 @@ export async function cacheComment(event: CommentSubmit | CommentUpdate, context
  * @returns A Promise that resolves to the cached comment text
  */
 async function getCachedComment(comment_id: string, context: TriggerContext): Promise<string | undefined> {
-  const cachedComment = await context.redis.get(comment_id);
+  let cachedComment: string | undefined;
+  try {
+    cachedComment = await context.redis.get(comment_id);
+  } catch (e) {
+    logger.cache.error(`Error fetching cached comment data for ${comment_id}`, e);
+    return undefined;
+  }
   if (cachedComment) {
     logger.cache.debug(`Retrieved cached comment data for ${comment_id}`);
   } else {
@@ -511,7 +523,12 @@ export async function cacheModerators(context: TriggerContext): Promise<string[]
  * @returns A promise that resolves to an array of moderator usernames
  */
 async function getCachedModerators(context: TriggerContext): Promise<string[]> {
-  const cached = await context.redis.get("mods");
+  let cached: string | undefined;
+  try {
+    cached = await context.redis.get("mods");
+  } catch (e) {
+    logger.modlist.error("Error fetching cached modlist from Redis", e);
+  }
   if (cached) {
     const moderators = cached.split(","); // Parse string representation of array
     logger.modlist.debug(`Retrieved ${moderators.length} cached moderators`);
