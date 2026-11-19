@@ -389,6 +389,15 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 export async function cachePost(event: PostSubmit | PostUpdate, context: TriggerContext) {
   const post = event.post;
   if (post && post.title) {
+    if (
+      post.title === "[ Removed by Reddit ]" ||
+      post.title === "[deleted]" ||
+      post.selftext === "[ Removed by Reddit ]"
+    ) {
+      logger.cache.debug(`Skipped caching ${post.id}: content is redacted or deleted`);
+      return;
+    }
+
     const data: CachedPostData = {
       title: post.title,
       body: post.selftext,
@@ -433,6 +442,11 @@ async function getCachedPost(post_id: string, context: TriggerContext): Promise<
 export async function cacheComment(event: CommentSubmit | CommentUpdate, context: TriggerContext) {
   const comment = event.comment;
   if (comment && comment.body) {
+    if (comment.body === "[ Removed by Reddit ]" || comment.body === "[deleted]") {
+      logger.cache.debug(`Skipped caching ${comment.id}: content is redacted or deleted`);
+      return;
+    }
+
     await context.redis
       .set(comment.id, comment.body, {
         expiration: new Date(Date.now() + CACHE_DURATION * 1000),
