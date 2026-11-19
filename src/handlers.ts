@@ -140,11 +140,11 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
             title = cachedPost.title;
             usedCachedTitle = true;
           }
-          if (cachedPost.url && !cachedPost.url.includes(targetPost.id.slice(3))) {
+          if (!url && cachedPost.url && !cachedPost.url.includes(targetPost.id.slice(3))) {
             url = cachedPost.url;
             usedCachedURL = true;
           }
-          if (cachedPost.body) {
+          if ((body == "[ Removed by Reddit ]" || !body) && cachedPost.body) {
             body = cachedPost.body;
             usedCachedBody = true;
           }
@@ -325,7 +325,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
       if (url) {
         discordPayload.embeds[0].fields.push({
-          name: (usedCachedTitle ? "URL (Cached)" : "URL"),
+          name: (usedCachedURL ? "URL (Cached)" : "URL"),
           value: url
         });
       }

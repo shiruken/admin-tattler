@@ -1420,6 +1420,113 @@ describe("handlers", () => {
       expect(createModInboxConversation).not.toHaveBeenCalled();
       errorSpy.mockRestore();
     });
+
+    it("preserves unredacted post body when only title is removed and cache contains a body", async () => {
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            if (key === "t3_partial_post") {
+              return Promise.resolve(
+                JSON.stringify({
+                  title: "Original Post Title",
+                  body: "Cached Post Body That Should Not Overwrite Live Body",
+                })
+              );
+            }
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        action: "removelink",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetPost: {
+          id: "t3_partial_post",
+          title: "[ Removed by Reddit ]",
+          selftext: "Live Intact Post Body From Event",
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+      const modmailArgs = createModInboxConversation.mock.calls[0][0];
+      expect(modmailArgs.bodyMarkdown).toContain("Original Post Title");
+      expect(modmailArgs.bodyMarkdown).toContain("Title (Cached)");
+      expect(modmailArgs.bodyMarkdown).toContain("Live Intact Post Body From Event");
+      expect(modmailArgs.bodyMarkdown).not.toContain("Body (Cached)");
+      expect(modmailArgs.bodyMarkdown).not.toContain("Cached Post Body That Should Not Overwrite Live Body");
+    });
+
+    it("sets Discord embed field name to URL (Cached) when cached URL is used", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok"));
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: false,
+            webhookURL: "https://discord.com/api/webhooks/123/xyz",
+            excludeContext: false,
+            addModNote: false,
+          }),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            if (key === "t3_url_post") {
+              return Promise.resolve(
+                JSON.stringify({
+                  title: "Post With External URL",
+                  url: "https://news.ycombinator.com",
+                })
+              );
+            }
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        action: "removelink",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetPost: {
+          id: "t3_url_post",
+          title: "[ Removed by Reddit ]",
+          // url omitted in event
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://discord.com/api/webhooks/123/xyz",
+        expect.objectContaining({
+          body: expect.stringMatching(/"name":"URL \(Cached\)","value":"https:\/\/news\.ycombinator\.com"/),
+        })
+      );
+      fetchSpy.mockRestore();
+    });
   });
 
   describe("formatRemovedFallback", () => {
