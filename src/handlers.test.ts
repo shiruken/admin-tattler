@@ -1184,7 +1184,7 @@ describe("handlers", () => {
       const modmailArgs = createModInboxConversation.mock.calls[0][0];
       const expectedDate = new Date(recentTimestamp).toLocaleDateString("fr-CA");
       expect(modmailArgs.bodyMarkdown).toContain(
-        `**Comment:**\n> [ Removed by Reddit ] (Submitted ${expectedDate}, not cached)`
+        `* **Comment:** [ Removed by Reddit ] (Submitted ${expectedDate}, not cached)`
       );
     });
 
@@ -1227,14 +1227,14 @@ describe("handlers", () => {
       await checkModAction(event, mockContext);
       const modmailArgs = createModInboxConversation.mock.calls[0][0];
       expect(modmailArgs.bodyMarkdown).toContain(
-        `**Title:**\n> [ Removed by Reddit ] (Submitted 2024-05-12, exceeds 30-day cache)`
+        `* **Title:** [ Removed by Reddit ] (Submitted 2024-05-12, exceeds 30-day cache)`
       );
       expect(modmailArgs.bodyMarkdown).toContain(
-        `**Body:**\n> [ Removed by Reddit ]`
+        `* **Body:** [ Removed by Reddit ]`
       );
       // Ensure the note is not duplicated on the body
       expect(modmailArgs.bodyMarkdown).not.toContain(
-        `**Body:**\n> [ Removed by Reddit ] (Submitted 2024-05-12`
+        `* **Body:** [ Removed by Reddit ] (Submitted 2024-05-12`
       );
     });
 
@@ -1277,9 +1277,9 @@ describe("handlers", () => {
       await checkModAction(event, mockContext);
       const modmailArgs = createModInboxConversation.mock.calls[0][0];
       const expectedDate = new Date(recentTimestamp).toLocaleDateString("fr-CA");
-      expect(modmailArgs.bodyMarkdown).toContain(`**Title:**\n> Intact Post Title`);
+      expect(modmailArgs.bodyMarkdown).toContain(`* **Title:** Intact Post Title`);
       expect(modmailArgs.bodyMarkdown).toContain(
-        `**Body:**\n> [ Removed by Reddit ] (Submitted ${expectedDate}, not cached)`
+        `* **Body:** [ Removed by Reddit ] (Submitted ${expectedDate}, not cached)`
       );
     });
 

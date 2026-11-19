@@ -225,11 +225,16 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
                 (url ? `\n* **URL${ usedCachedURL ? " (Cached)" : "" }:** ${url}` : "");
 
       if (!settings.excludeContext && title) {
-        msg += `\n\n**Title${ usedCachedTitle ? " (Cached)" : "" }:**\n${quoteText(title)}`;
+        msg += `\n* **Title${ usedCachedTitle ? " (Cached)" : "" }:** ${title}`;
       }
 
       if (!settings.excludeContext && body) {
-        msg += `\n\n**${targetComment ? "Comment" : "Body"}${ usedCachedBody ? " (Cached)" : "" }:**\n${quoteText(body.slice(0, 9000))}`;
+        const bodyLabel = `${targetComment ? "Comment" : "Body"}${ usedCachedBody ? " (Cached)" : "" }`;
+        if (body.startsWith("[ Removed by Reddit ]") || body === "[deleted]" || body === "[removed]") {
+          msg += `\n* **${bodyLabel}:** ${body}`;
+        } else {
+          msg += `\n* **${bodyLabel}:**\n${quoteText(body.slice(0, 9000))}`;
+        }
       }
 
       msg += `\n\n[**${modlogLinkDesc}**](${modlogLink})\n\n` +
@@ -552,7 +557,7 @@ async function getCachedModerators(context: TriggerContext): Promise<string[]> {
 }
 
 /**
- * Format string as quoted text in Reddit Markdown
+ * Format string as quoted text in Reddit Markdown indented under a list item
  * @param text A string to format as quoted text
  * @returns A string containing quoted text
  */
@@ -560,7 +565,7 @@ function quoteText(text: string): string {
   return text
     .trim()
     .split("\n")
-    .map((line) => (line.length ? `> ${line}` : ">"))
+    .map((line) => (line.length ? `  > ${line}` : "  >"))
     .join("\n");
 }
 
