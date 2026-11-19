@@ -1860,6 +1860,96 @@ describe("handlers", () => {
       expect(createModInboxConversation).toHaveBeenCalledTimes(1);
       errorSpy.mockRestore();
     });
+
+    it("continues to alert and logs error if getBannedUsers throws an error", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          getBannedUsers: vi.fn().mockRejectedValue(new Error("Reddit ban API timeout")),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        id: "ModAction_banned_err",
+        action: "banuser",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetUser: { id: "t2_targetuser", name: "baduser" },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[action] Error checking ban status for u/baduser",
+        expect.any(Error)
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+      // Verify message contains target user without the "(Banned in r/testsub)" tag
+      expect(createModInboxConversation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bodyMarkdown: expect.stringContaining("* **Target User:** u/baduser\n"),
+        })
+      );
+      errorSpy.mockRestore();
+    });
+
+    it("falls back to context.subredditId when event.subreddit.id is missing or needs t5_ prefix", async () => {
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+
+      const mockContext = {
+        subredditId: "context_sub_id",
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "mods") return Promise.resolve("localmod");
+            return Promise.resolve(null);
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue((async function*() { yield { username: "localmod" }; })()),
+          }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        id: "ModAction_no_sub_id",
+        action: "removelink",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { name: "testsub" }, // No id
+        targetPost: { id: "t3_post_no_sub_id", title: "Test" },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+
+      expect(createModInboxConversation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subredditId: "t5_context_sub_id",
+        })
+      );
+    });
   });
 
   describe("formatRemovedFallback", () => {
