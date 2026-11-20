@@ -2392,6 +2392,145 @@ describe("handlers", () => {
       debugSpy.mockRestore();
       errorSpy.mockRestore();
     });
+
+    it("logs error when Slack or Discord webhook returns a non-OK HTTP status", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const makeContext = (webhookURL: string) =>
+        ({
+          settings: {
+            getAll: vi.fn().mockResolvedValue({
+              sendModmail: false,
+              webhookURL,
+              excludeContext: false,
+              addModNote: false,
+            }),
+          },
+          redis: {
+            get: vi.fn().mockResolvedValue("localmod"),
+            set: vi.fn().mockResolvedValue("OK"),
+          },
+          reddit: {},
+        }) as unknown as TriggerContext;
+
+      // Slack 400 Bad Request
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(new Response("invalid_blocks", { status: 400, statusText: "Bad Request" }))
+      );
+      await checkModAction(
+        {
+          id: "ModAction_slack_400",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_slack400", title: "Test" },
+        } as unknown as ModAction,
+        makeContext("https://hooks.slack.com/services/T00/B00/X")
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[notify] Error sending Slack message about removelink by Anti-Evil Operations",
+        expect.objectContaining({ message: "HTTP 400 Bad Request" })
+      );
+      expect(logSpy).not.toHaveBeenCalledWith(
+        "[notify] Sent Slack message about removelink by Anti-Evil Operations"
+      );
+
+      // Discord 429 Too Many Requests
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(new Response("rate limited", { status: 429, statusText: "Too Many Requests" }))
+      );
+      await checkModAction(
+        {
+          id: "ModAction_discord_429",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_disc429", title: "Test" },
+        } as unknown as ModAction,
+        makeContext("https://discord.com/api/webhooks/123/xyz")
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[notify] Error sending Discord message about removelink by Anti-Evil Operations",
+        expect.objectContaining({ message: "HTTP 429 Too Many Requests" })
+      );
+      expect(logSpy).not.toHaveBeenCalledWith(
+        "[notify] Sent Discord message about removelink by Anti-Evil Operations"
+      );
+
+      errorSpy.mockRestore();
+      logSpy.mockRestore();
+    });
+
+    it("caps Slack context block text to 3000 chars and Discord URL field to 1024 chars", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const longUrl = "https://example.com/" + "a".repeat(1200);
+      const longTitle = "T".repeat(300);
+      const longBody = "B".repeat(2600);
+
+      const makeContext = (webhookURL: string) =>
+        ({
+          settings: {
+            getAll: vi.fn().mockResolvedValue({
+              sendModmail: false,
+              webhookURL,
+              excludeContext: false,
+              addModNote: false,
+            }),
+          },
+          redis: {
+            get: vi.fn().mockResolvedValue("localmod"),
+            set: vi.fn().mockResolvedValue("OK"),
+          },
+          reddit: {},
+        }) as unknown as TriggerContext;
+
+      // Slack
+      await checkModAction(
+        {
+          id: "ModAction_slack_cap",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: {
+            id: "t3_slack_cap",
+            permalink: "/r/testsub/comments/slack_cap/test/",
+            url: longUrl,
+            title: longTitle,
+            selftext: longBody,
+          },
+        } as unknown as ModAction,
+        makeContext("https://hooks.slack.com/services/T00/B00/X")
+      );
+      const slackCall = fetchMock.mock.calls[0];
+      expect(slackCall[1].headers).toEqual({ "Content-Type": "application/json" });
+      const slackBody = JSON.parse(slackCall[1].body);
+      expect(slackBody.attachments[0].blocks[0].elements[0].text.length).toBeLessThanOrEqual(3000);
+
+      // Discord
+      await checkModAction(
+        {
+          id: "ModAction_discord_cap",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: {
+            id: "t3_discord_cap",
+            url: longUrl,
+            title: longTitle,
+            selftext: longBody,
+          },
+        } as unknown as ModAction,
+        makeContext("https://discord.com/api/webhooks/123/xyz")
+      );
+      const discordBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+      const urlField = discordBody.embeds[0].fields.find((f: { name: string }) => f.name === "URL");
+      expect(urlField.value.length).toBe(1024);
+    });
   });
 
   describe("formatRemovedFallback", () => {

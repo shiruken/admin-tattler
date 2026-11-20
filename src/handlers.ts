@@ -297,6 +297,15 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
     // Send to Slack
     if (settings.webhookURL && settings.webhookURL.startsWith("https://hooks.slack.com/")) {
+      const slackContextText = (
+        `*Action:* \`${action}\`` +
+        (permalink ? `\n*Permalink:* ${permalink}` : "") +
+        (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>${ is_banned ? ` (Banned in r/${subredditName})`: "" }` : "") +
+        (url ? `\n*URL${ usedCachedURL ? " (Cached)" : "" }:* ${url}` : "") +
+        (!settings.excludeContext && title ? `\n*Title${ usedCachedTitle ? " (Cached)" : "" }:* ${title}` : "") +
+        (!settings.excludeContext && body ? `\n*Body${ usedCachedBody ? " (Cached)" : "" }:* ${body.slice(0, 2500)}` : "")
+      ).slice(0, 3000);
+
       const slackPayload = {
         blocks: [
           {
@@ -316,12 +325,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
                 elements: [
                   {
                     type: "mrkdwn",
-                    text: `*Action:* \`${action}\`` +
-                          (permalink ? `\n*Permalink:* ${permalink}` : "") +
-                          (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>${ is_banned ? ` (Banned in r/${subredditName})`: "" }` : "") +
-                          (url ? `\n*URL${ usedCachedURL ? " (Cached)" : "" }:* ${url}` : "") +
-                          (!settings.excludeContext && title ? `\n*Title${ usedCachedTitle ? " (Cached)" : "" }:* ${title}` : "") +
-                          (!settings.excludeContext && body ? `\n*Body${ usedCachedBody ? " (Cached)" : "" }:* ${body.slice(0, 2500)}` : "")
+                    text: slackContextText
                   }
                 ]
               },
@@ -344,9 +348,17 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       };
       await fetch(settings.webhookURL, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(slackPayload),
       })
-        .then(() => logger.notify.info(`Sent Slack message about ${action} by ${moderatorName}`))
+        .then((res) => {
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status} ${res.statusText}`);
+          }
+          logger.notify.info(`Sent Slack message about ${action} by ${moderatorName}`);
+        })
         .catch((e) => logger.notify.error(`Error sending Slack message about ${action} by ${moderatorName}`, e));
     }
 
@@ -386,7 +398,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       if (url) {
         discordPayload.embeds[0].fields.push({
           name: (usedCachedURL ? "URL (Cached)" : "URL"),
-          value: url
+          value: url.slice(0, 1024)
         });
       }
 
@@ -416,7 +428,12 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         },
         body: JSON.stringify(discordPayload),
       })
-        .then(() => logger.notify.info(`Sent Discord message about ${action} by ${moderatorName}`))
+        .then((res) => {
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status} ${res.statusText}`);
+          }
+          logger.notify.info(`Sent Discord message about ${action} by ${moderatorName}`);
+        })
         .catch((e) => logger.notify.error(`Error sending Discord message about ${action} by ${moderatorName}`, e));
     }
 
