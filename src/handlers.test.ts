@@ -2561,6 +2561,43 @@ describe("handlers", () => {
       const urlField = discordBody.embeds[0].fields.find((f: { name: string }) => f.name === "URL");
       expect(urlField.value.length).toBe(1024);
     });
+
+    it("continues to alert if cacheModerators fails during a modlist change action by an Admin", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockRejectedValue(new Error("Reddit API 500")),
+          getBannedUsers: vi.fn().mockResolvedValue({ all: vi.fn().mockResolvedValue([]) }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        id: "ModAction_admin_addmod_err",
+        action: "addmoderator",
+        moderator: { name: "Anti-Evil Operations" },
+        targetUser: { id: "t2_newadminmod", name: "newadminmod" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[modlist] Error updating cached modlist on addmoderator",
+        expect.any(Error)
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+      errorSpy.mockRestore();
+    });
   });
 
   describe("formatRemovedFallback", () => {

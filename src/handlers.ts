@@ -43,7 +43,11 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     action == "removemoderator" || action == "reordermoderators"
   ) {
     logger.modlist.debug(`Updating cached modlist on ${action} by ${moderatorName}`);
-    await cacheModerators(context);
+    try {
+      await cacheModerators(context);
+    } catch (e) {
+      logger.modlist.error(`Error updating cached modlist on ${action}`, e);
+    }
   }
 
   // Ignore actions by AutoModerator and reddit
