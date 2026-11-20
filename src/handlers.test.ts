@@ -494,15 +494,18 @@ describe("handlers", () => {
       expect(createModInboxConversation).not.toHaveBeenCalled();
     });
 
-    it("updates cached modlist on modlist change action", async () => {
+    it("updates cached modlist on modlist change action and reuses fresh modlist", async () => {
       async function* getModsGen() {
+        yield { username: "currentmod" };
         yield { username: "newmod" };
       }
 
       const redisSet = vi.fn().mockResolvedValue("OK");
+      const redisGet = vi.fn().mockResolvedValue("currentmod");
+      const getAllSettings = vi.fn().mockResolvedValue(baseSettings);
       const mockContext = {
         settings: {
-          getAll: vi.fn().mockResolvedValue(baseSettings),
+          getAll: getAllSettings,
         },
         reddit: {
           getCurrentSubreddit: vi.fn().mockResolvedValue({
@@ -513,7 +516,7 @@ describe("handlers", () => {
         redis: {
           set: redisSet,
           expire: vi.fn().mockResolvedValue(1),
-          get: vi.fn().mockResolvedValue("currentmod"),
+          get: redisGet,
         },
       } as unknown as TriggerContext;
 
@@ -524,9 +527,12 @@ describe("handlers", () => {
       } as unknown as ModAction;
 
       await checkModAction(event, mockContext);
-      expect(redisSet).toHaveBeenCalledWith("mods", "newmod", {
+      expect(redisSet).toHaveBeenCalledWith("mods", "currentmod,newmod", {
         expiration: expect.any(Date),
       });
+      // Reuses fresh modlist instead of reading from Redis again, and skips settings RPC for local mod
+      expect(redisGet).not.toHaveBeenCalled();
+      expect(getAllSettings).not.toHaveBeenCalled();
     });
 
     it("ignores actions performed by sub moderators", async () => {
@@ -2597,6 +2603,69 @@ describe("handlers", () => {
       );
       expect(createModInboxConversation).toHaveBeenCalledTimes(1);
       errorSpy.mockRestore();
+    });
+
+    it("does not fetch settings for ignored AutoModerator, reddit, [deleted], or local moderator actions", async () => {
+      const getAllSettings = vi.fn().mockResolvedValue(baseSettings);
+      const mockContext = {
+        settings: { getAll: getAllSettings },
+        redis: {
+          get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {},
+      } as unknown as TriggerContext;
+
+      for (const name of ["AutoModerator", "reddit", "[deleted]", "localmod"]) {
+        await checkModAction(
+          {
+            action: "removecomment",
+            moderator: { name },
+            subreddit: { id: "t5_testsub", name: "testsub" },
+          } as unknown as ModAction,
+          mockContext
+        );
+      }
+
+      expect(getAllSettings).not.toHaveBeenCalled();
+    });
+
+    it("avoids redundant live modlist refresh when a named Admin performs a modlist change action", async () => {
+      const getCurrentSubreddit = vi.fn().mockResolvedValue({
+        name: "testsub",
+        getModerators: vi.fn().mockReturnValue((async function* () { yield { username: "localmod" }; })()),
+      });
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const redisGet = vi.fn();
+
+      const mockContext = {
+        settings: { getAll: vi.fn().mockResolvedValue(baseSettings) },
+        redis: {
+          get: redisGet,
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCurrentSubreddit,
+          getBannedUsers: vi.fn().mockResolvedValue({ all: vi.fn().mockResolvedValue([]) }),
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      await checkModAction(
+        {
+          id: "ModAction_named_admin_addmod",
+          action: "addmoderator",
+          moderator: { name: "spez" },
+          targetUser: { id: "t2_other", name: "newmod" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+        } as unknown as ModAction,
+        mockContext
+      );
+
+      // Fetched modlist once on addmoderator; neither re-read from Redis nor refreshed a second time
+      expect(getCurrentSubreddit).toHaveBeenCalledTimes(1);
+      expect(redisGet).not.toHaveBeenCalled();
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
     });
   });
 

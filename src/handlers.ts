@@ -35,16 +35,17 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
   }
   const subredditName = subreddit.name;
 
-  const settings = await getValidatedSettings(context);
-
   // Update cached modlist on modlist change
+  let moderators: string[] | undefined;
+  let didLiveRefresh = false;
   if (
     action == "acceptmoderatorinvite" || action == "addmoderator" ||
     action == "removemoderator" || action == "reordermoderators"
   ) {
     logger.modlist.debug(`Updating cached modlist on ${action} by ${moderatorName}`);
     try {
-      await cacheModerators(context);
+      moderators = await cacheModerators(context);
+      didLiveRefresh = true;
     } catch (e) {
       logger.modlist.error(`Error updating cached modlist on ${action}`, e);
     }
@@ -69,8 +70,8 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     return;
   }
 
-  let moderators = await getCachedModerators(context);
-  let isMod = moderators.some((m) => m.toLowerCase() === moderatorName.toLowerCase());
+  moderators ??= await getCachedModerators(context);
+  let isMod = moderators.some((m) => m.toLowerCase() === modLower);
 
   // Check if acting moderator is NOT in modlist (or simulated admin during playtest)
   // Devvit playtest versions contain a 4th prerelease segment (e.g. 0.8.1.2) or a hyphen
@@ -87,6 +88,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
   // perform a live refresh of the modlist to prevent false positives for newly added mods
   if (
     !isMod &&
+    !didLiveRefresh &&
     !isPlaytestDev &&
     moderatorName != "Anti-Evil Operations" &&
     moderatorName != "Reddit Legal" &&
@@ -95,7 +97,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     logger.action.debug(`u/${moderatorName} not found in cached modlist, performing live refresh to verify`);
     try {
       moderators = await cacheModerators(context);
-      isMod = moderators.some((m) => m.toLowerCase() === moderatorName.toLowerCase());
+      isMod = moderators.some((m) => m.toLowerCase() === modLower);
       if (isMod) {
         logger.action.debug(`u/${moderatorName} confirmed as moderator after live refresh; skipping`);
         return;
@@ -108,6 +110,8 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
   if (isPlaytestDev && isMod) {
     logger.action.info(`[Playtest] Simulating Admin action for mod u/${moderatorName}`);
   }
+
+  const settings = await getValidatedSettings(context);
 
   // If all reporting routes and mod notes are disabled, skip processing
   if (!settings.sendModmail && !settings.webhookURL && !settings.addModNote) {
