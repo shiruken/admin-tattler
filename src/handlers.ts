@@ -293,14 +293,27 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
              `Configure settings [here](https://developers.reddit.com/r/${subredditName}/apps/admin-tattler).`;
       const rawSubredditId = subreddit.id || context.subredditId || "";
       const subredditId = (rawSubredditId.startsWith("t5_") ? rawSubredditId : `t5_${rawSubredditId}`) as `t5_${string}`;
-      await context.reddit.modMail
+      const conversationId = await context.reddit.modMail
         .createModInboxConversation({
           subredditId,
           subject: `Admin Action Detected: ${action}`,
           bodyMarkdown: msg,
         })
-        .then(() => logger.notify.info(`Sent modmail about ${action} by ${moderatorName}`))
-        .catch((e) => logger.notify.error(`Error sending modmail about ${action} by ${moderatorName}`, e));
+        .then((id) => {
+          logger.notify.info(`Sent modmail about ${action} by ${moderatorName}`);
+          return id;
+        })
+        .catch((e) => {
+          logger.notify.error(`Error sending modmail about ${action} by ${moderatorName}`, e);
+          return undefined;
+        });
+
+      if (settings.archiveModmail && conversationId) {
+        await context.reddit.modMail
+          .archiveConversation(conversationId)
+          .then(() => logger.notify.debug(`Archived modmail conversation ${conversationId}`))
+          .catch((e) => logger.notify.error(`Error archiving modmail conversation ${conversationId}`, e));
+      }
     }
 
     // Send to Slack

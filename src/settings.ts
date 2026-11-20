@@ -10,6 +10,13 @@ export const settings: SettingsFormField[] = [
     defaultValue: true,
   },
   {
+    type: "boolean",
+    name: "archiveModmail",
+    label: "Archive Modmail",
+    helpText: "Automatically archive Modmail reports after sending",
+    defaultValue: false,
+  },
+  {
     type: "string",
     name: "webhookURL",
     label: "Webhook URL (Slack or Discord)",

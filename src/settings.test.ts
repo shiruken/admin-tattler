@@ -10,11 +10,15 @@ function findNamedField(name: string): NamedFormField | undefined {
 
 describe("settings", () => {
   it("defines the expected form fields", () => {
-    expect(settings).toHaveLength(4);
+    expect(settings).toHaveLength(5);
 
     const sendModmail = findNamedField("sendModmail");
     expect(sendModmail).toBeDefined();
     expect(sendModmail?.defaultValue).toBe(true);
+
+    const archiveModmail = findNamedField("archiveModmail");
+    expect(archiveModmail).toBeDefined();
+    expect(archiveModmail?.defaultValue).toBe(false);
 
     const webhookURL = findNamedField("webhookURL");
     expect(webhookURL).toBeDefined();

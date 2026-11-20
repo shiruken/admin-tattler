@@ -2667,6 +2667,86 @@ describe("handlers", () => {
       expect(redisGet).not.toHaveBeenCalled();
       expect(createModInboxConversation).toHaveBeenCalledTimes(1);
     });
+
+    it("archives modmail conversation when archiveModmail is enabled and handles archive errors gracefully", async () => {
+      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const createModInboxConversation = vi
+        .fn()
+        .mockResolvedValueOnce("conv_123")
+        .mockResolvedValueOnce("conv_456")
+        .mockResolvedValueOnce("conv_789");
+      const archiveConversation = vi
+        .fn()
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(new Error("Archive permission error"));
+
+      const makeContext = (archiveModmail: boolean) =>
+        ({
+          settings: {
+            getAll: vi.fn().mockResolvedValue({
+              ...baseSettings,
+              webhookURL: "",
+              addModNote: false,
+              archiveModmail,
+            }),
+          },
+          redis: {
+            get: vi.fn().mockResolvedValue("localmod"),
+            set: vi.fn().mockResolvedValue("OK"),
+          },
+          reddit: {
+            modMail: { createModInboxConversation, archiveConversation },
+          },
+        }) as unknown as TriggerContext;
+
+      // 1. archiveModmail: true -> archives conversation
+      await checkModAction(
+        {
+          id: "ModAction_archive_1",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_arch1", title: "Test 1" },
+        } as unknown as ModAction,
+        makeContext(true)
+      );
+      expect(archiveConversation).toHaveBeenCalledWith("conv_123");
+      expect(debugSpy).toHaveBeenCalledWith("[notify] Archived modmail conversation conv_123");
+
+      // 2. archiveModmail: true, archiveConversation throws -> logs error gracefully
+      await checkModAction(
+        {
+          id: "ModAction_archive_2",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_arch2", title: "Test 2" },
+        } as unknown as ModAction,
+        makeContext(true)
+      );
+      expect(archiveConversation).toHaveBeenCalledWith("conv_456");
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[notify] Error archiving modmail conversation conv_456",
+        expect.any(Error)
+      );
+
+      // 3. archiveModmail: false -> does not archive
+      await checkModAction(
+        {
+          id: "ModAction_archive_3",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_arch3", title: "Test 3" },
+        } as unknown as ModAction,
+        makeContext(false)
+      );
+      expect(archiveConversation).toHaveBeenCalledTimes(2);
+
+      debugSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
   });
 
   describe("formatRemovedFallback", () => {
