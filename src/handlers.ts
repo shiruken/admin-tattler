@@ -46,9 +46,9 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     await cacheModerators(context);
   }
 
-  // Ignore actions by platform bots
+  // Ignore actions by AutoModerator and reddit
   if (modLower === "automoderator" || modLower === "reddit") {
-    logger.action.debug(`Ignored ${action} by platform bot ${moderatorName}`);
+    logger.action.debug(`Ignored ${action} by ${moderatorName}`);
     return;
   }
 
@@ -108,6 +108,13 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
   // If all reporting routes and mod notes are disabled, skip processing
   if (!settings.sendModmail && !settings.webhookURL && !settings.addModNote) {
     logger.action.debug(`Ignored ${action} by ${moderatorName}: all reporting routes and mod notes are disabled`);
+    return;
+  }
+
+  // Ignore unsticky actions on content that has been deleted
+  if (action === "unsticky" && await isUnstickyTargetDeleted(event, context)) {
+    const targetId = event.targetComment?.id ?? event.targetPost?.id ?? "unknown";
+    logger.action.debug(`Ignored unsticky on deleted content (${targetId})`);
     return;
   }
 
@@ -590,6 +597,57 @@ async function getCachedModerators(context: TriggerContext): Promise<string[]> {
 
   logger.modlist.debug("Cached modlist is empty or expired, refreshing...");
   return await cacheModerators(context);
+}
+
+/**
+ * Check whether the target post or comment of an `unsticky` action has been deleted
+ * @param event A ModAction object
+ * @param context A TriggerContext object
+ * @returns True if the target content is deleted
+ */
+async function isUnstickyTargetDeleted(event: ModAction, context: TriggerContext): Promise<boolean> {
+  if (
+    event.targetComment?.deleted ||
+    event.targetPost?.deleted ||
+    event.targetComment?.body === "[deleted]" ||
+    event.targetPost?.selftext === "[deleted]" ||
+    event.targetPost?.title === "[deleted]" ||
+    event.targetUser?.name === "[deleted]"
+  ) {
+    return true;
+  }
+
+  if (event.targetComment?.id) {
+    try {
+      const comment = await context.reddit.getCommentById(event.targetComment.id);
+      return comment.authorName === "[deleted]" || comment.body === "[deleted]";
+    } catch (e) {
+      if (e instanceof Error && (e.message === "not found" || e.message.includes("404"))) {
+        return true;
+      }
+      logger.action.error(`Error checking deletion status for ${event.targetComment.id}`, e);
+      return false;
+    }
+  }
+
+  if (event.targetPost?.id) {
+    try {
+      const post = await context.reddit.getPostById(event.targetPost.id);
+      return (
+        post.authorName === "[deleted]" ||
+        post.body === "[deleted]" ||
+        post.title === "[deleted]"
+      );
+    } catch (e) {
+      if (e instanceof Error && (e.message.startsWith("no post ") || e.message.includes("404"))) {
+        return true;
+      }
+      logger.action.error(`Error checking deletion status for ${event.targetPost.id}`, e);
+      return false;
+    }
+  }
+
+  return false;
 }
 
 /**

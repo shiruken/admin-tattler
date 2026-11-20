@@ -2093,6 +2093,305 @@ describe("handlers", () => {
         expect.objectContaining({ expiration: expect.any(Date) })
       );
     });
+
+    it("ignores unsticky action when targetComment.deleted is true in event payload", async () => {
+      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const getCommentById = vi.fn();
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCommentById,
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        id: "ModAction_unsticky_proto_deleted",
+        action: "unsticky",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetComment: {
+          id: "t1_deleted_sticky",
+          body: "Original sticky text",
+          deleted: true,
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+
+      expect(getCommentById).not.toHaveBeenCalled();
+      expect(createModInboxConversation).not.toHaveBeenCalled();
+      expect(debugSpy).toHaveBeenCalledWith(
+        "[action] Ignored unsticky on deleted content (t1_deleted_sticky)"
+      );
+      debugSpy.mockRestore();
+    });
+
+    it("ignores unsticky action when live getCommentById shows deleted comment despite intact event payload", async () => {
+      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const getCommentById = vi.fn().mockResolvedValue({
+        authorName: "[deleted]",
+        body: "[deleted]",
+        removed: false,
+      });
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCommentById,
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        id: "ModAction_unsticky_live_deleted_comment",
+        action: "unsticky",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetUser: { id: "t2_bot", name: "only-flairs" },
+        targetComment: {
+          id: "t1_phwbv0n",
+          body: "Commenting on this post is currently restricted...",
+          deleted: false,
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+
+      expect(getCommentById).toHaveBeenCalledWith("t1_phwbv0n");
+      expect(createModInboxConversation).not.toHaveBeenCalled();
+      expect(debugSpy).toHaveBeenCalledWith(
+        "[action] Ignored unsticky on deleted content (t1_phwbv0n)"
+      );
+      debugSpy.mockRestore();
+    });
+
+    it("ignores unsticky action when live getCommentById throws not found", async () => {
+      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const getCommentById = vi.fn().mockRejectedValue(new Error("not found"));
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCommentById,
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        id: "ModAction_unsticky_not_found_comment",
+        action: "unsticky",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetComment: {
+          id: "t1_gone",
+          body: "Some text",
+          deleted: false,
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+
+      expect(createModInboxConversation).not.toHaveBeenCalled();
+      expect(debugSpy).toHaveBeenCalledWith(
+        "[action] Ignored unsticky on deleted content (t1_gone)"
+      );
+      debugSpy.mockRestore();
+    });
+
+    it("alerts on unsticky when live getCommentById confirms comment is still live", async () => {
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const getCommentById = vi.fn().mockResolvedValue({
+        authorName: "some_mod",
+        body: "Active sticky comment",
+        removed: false,
+      });
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCommentById,
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        id: "ModAction_unsticky_live_comment",
+        action: "unsticky",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetComment: {
+          id: "t1_live_sticky",
+          body: "Active sticky comment",
+          deleted: false,
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+
+      expect(getCommentById).toHaveBeenCalledWith("t1_live_sticky");
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+    });
+
+    it("fails open and alerts on unsticky if getCommentById throws a transient API error", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const getCommentById = vi.fn().mockRejectedValue(new Error("503 Service Unavailable"));
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getCommentById,
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      const event: ModAction = {
+        id: "ModAction_unsticky_comment_api_err",
+        action: "unsticky",
+        moderator: { name: "Anti-Evil Operations" },
+        subreddit: { id: "t5_testsub", name: "testsub" },
+        targetComment: {
+          id: "t1_err_sticky",
+          body: "Some text",
+          deleted: false,
+        },
+      } as unknown as ModAction;
+
+      await checkModAction(event, mockContext);
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[action] Error checking deletion status for t1_err_sticky",
+        expect.any(Error)
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+      errorSpy.mockRestore();
+    });
+
+    it("ignores unsticky action on deleted post via live getPostById and handles no post / API errors", async () => {
+      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
+      const getPostById = vi
+        .fn()
+        .mockResolvedValueOnce({
+          authorName: "[deleted]",
+          body: "[deleted]",
+          title: "Old Sticky Post",
+          removed: false,
+        })
+        .mockRejectedValueOnce(new Error("no post t3_purged_post"))
+        .mockRejectedValueOnce(new Error("500 Internal Server Error"));
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue(baseSettings),
+        },
+        redis: {
+          get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getPostById,
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      // 1. Live post shows deleted author/body -> ignored
+      await checkModAction(
+        {
+          id: "ModAction_unsticky_post_1",
+          action: "unsticky",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_del_post", title: "Old Sticky Post", deleted: false },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(createModInboxConversation).not.toHaveBeenCalled();
+      expect(debugSpy).toHaveBeenCalledWith(
+        "[action] Ignored unsticky on deleted content (t3_del_post)"
+      );
+
+      // 2. Post not found ("no post ...") -> ignored
+      await checkModAction(
+        {
+          id: "ModAction_unsticky_post_2",
+          action: "unsticky",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_purged_post", title: "Purged Post", deleted: false },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(createModInboxConversation).not.toHaveBeenCalled();
+
+      // 3. Transient API error -> fails open and alerts
+      await checkModAction(
+        {
+          id: "ModAction_unsticky_post_3",
+          action: "unsticky",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_err_post", title: "Error Post", deleted: false },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[action] Error checking deletion status for t3_err_post",
+        expect.any(Error)
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+
+      // 4. Unsticky with neither targetComment nor targetPost -> alerts
+      await checkModAction(
+        {
+          id: "ModAction_unsticky_no_target",
+          action: "unsticky",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(2);
+
+      debugSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
   });
 
   describe("formatRemovedFallback", () => {
