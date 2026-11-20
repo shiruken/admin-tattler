@@ -848,7 +848,7 @@ describe("handlers", () => {
       expect(createModInboxConversation).toHaveBeenCalledTimes(1);
       const modmailArgs = createModInboxConversation.mock.calls[0][0];
       expect(modmailArgs.subredditId).toBe("t5_testsub");
-      expect(modmailArgs.subject).toBe("Admin Action Detected");
+      expect(modmailArgs.subject).toBe("Admin Action Detected: removelink");
       expect(modmailArgs.bodyMarkdown).toContain("u/admin_colin");
       expect(modmailArgs.bodyMarkdown).toContain("Original Post Title");
       expect(modmailArgs.bodyMarkdown).toContain("Original Post Body");

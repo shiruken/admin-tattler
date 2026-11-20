@@ -296,7 +296,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       await context.reddit.modMail
         .createModInboxConversation({
           subredditId,
-          subject: "Admin Action Detected",
+          subject: `Admin Action Detected: ${action}`,
           bodyMarkdown: msg,
         })
         .then(() => logger.notify.info(`Sent modmail about ${action} by ${moderatorName}`))
