@@ -467,9 +467,13 @@ export async function cachePost(event: PostSubmit | PostUpdate, context: Trigger
   const post = event.post;
   if (post && post.title) {
     if (
+      post.deleted ||
       post.title === "[ Removed by Reddit ]" ||
       post.title === "[deleted]" ||
-      post.selftext === "[ Removed by Reddit ]"
+      post.title === "[removed]" ||
+      post.selftext === "[ Removed by Reddit ]" ||
+      post.selftext === "[deleted]" ||
+      post.selftext === "[removed]"
     ) {
       logger.cache.debug(`Skipped caching ${post.id}: content is redacted or deleted`);
       return;
@@ -525,7 +529,12 @@ async function getCachedPost(post_id: string, context: TriggerContext): Promise<
 export async function cacheComment(event: CommentSubmit | CommentUpdate, context: TriggerContext) {
   const comment = event.comment;
   if (comment && comment.body) {
-    if (comment.body === "[ Removed by Reddit ]" || comment.body === "[deleted]") {
+    if (
+      comment.deleted ||
+      comment.body === "[ Removed by Reddit ]" ||
+      comment.body === "[deleted]" ||
+      comment.body === "[removed]"
+    ) {
       logger.cache.debug(`Skipped caching ${comment.id}: content is redacted or deleted`);
       return;
     }

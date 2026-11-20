@@ -72,11 +72,31 @@ describe("handlers", () => {
         { post: { id: "t3_p3", title: "Valid Title", selftext: "[ Removed by Reddit ]" } } as PostSubmit,
         mockContext
       );
+      await cachePost(
+        { post: { id: "t3_p4", title: "[removed]", selftext: "text" } } as PostSubmit,
+        mockContext
+      );
+      await cachePost(
+        { post: { id: "t3_p5", title: "Valid Title", selftext: "[deleted]" } } as PostSubmit,
+        mockContext
+      );
+      await cachePost(
+        { post: { id: "t3_p6", title: "Valid Title", selftext: "[removed]" } } as PostSubmit,
+        mockContext
+      );
+      await cachePost(
+        { post: { id: "t3_p7", title: "Valid Title", selftext: "text", deleted: true } } as PostSubmit,
+        mockContext
+      );
 
       expect(redisSet).not.toHaveBeenCalled();
       expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t3_p1: content is redacted or deleted");
       expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t3_p2: content is redacted or deleted");
       expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t3_p3: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t3_p4: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t3_p5: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t3_p6: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t3_p7: content is redacted or deleted");
       consoleDebug.mockRestore();
     });
 
@@ -150,10 +170,20 @@ describe("handlers", () => {
         { comment: { id: "t1_c2", body: "[deleted]" } } as CommentSubmit,
         mockContext
       );
+      await cacheComment(
+        { comment: { id: "t1_c3", body: "[removed]" } } as CommentSubmit,
+        mockContext
+      );
+      await cacheComment(
+        { comment: { id: "t1_c4", body: "Valid text", deleted: true } } as CommentSubmit,
+        mockContext
+      );
 
       expect(redisSet).not.toHaveBeenCalled();
       expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t1_c1: content is redacted or deleted");
       expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t1_c2: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t1_c3: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t1_c4: content is redacted or deleted");
       consoleDebug.mockRestore();
     });
 
