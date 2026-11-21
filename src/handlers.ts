@@ -1,6 +1,6 @@
 import { TriggerContext } from "@devvit/public-api";
 import { CommentSubmit, CommentUpdate, ModAction, PostSubmit, PostUpdate } from '@devvit/protos';
-import { CachedPostData } from "./types.js";
+import { CachedModAction, CachedPostData } from "./types.js";
 import { getValidatedSettings, parseWebhookURLs } from "./settings.js";
 import { logger } from "./logger.js";
 
@@ -9,6 +9,8 @@ const MODERATOR_CACHE_TTL_SECONDS = 60*60*24; // 24 hours (self-heal missed webh
 const RECENT_SUBMISSION_RETRY_WINDOW_MS = 60_000; // 60 seconds
 const RETRY_DELAY_MS = 1000; // 1 second
 const DEDUP_CACHE_TTL_SECONDS = 60*60*24; // 24 hours (1 day)
+const COMMENT_MOD_ACTIONS = new Set(["removecomment", "spamcomment", "approvecomment"]);
+const POST_MOD_ACTIONS = new Set(["removelink", "spamlink", "approvelink"]);
 
 /**
  * Checks ModAction for Admins
@@ -51,8 +53,9 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     }
   }
 
-  // Ignore actions by AutoModerator and reddit
+  // Ignore actions by AutoModerator and reddit (but record content removals/approvals)
   if (modLower === "automoderator" || modLower === "reddit") {
+    await cacheModAction(event, context);
     logger.action.debug(`Ignored ${action} by ${moderatorName}`);
     return;
   }
@@ -80,6 +83,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     subredditName === "admin_tattler_dev" && isPrerelease(context.appVersion);
 
   if (isMod && !isPlaytestDev) {
+    await cacheModAction(event, context);
     logger.action.debug(`Ignored ${action} by local moderator u/${moderatorName}`);
     return;
   }
@@ -99,6 +103,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       moderators = await cacheModerators(context);
       isMod = moderators.some((m) => m.toLowerCase() === modLower);
       if (isMod) {
+        await cacheModAction(event, context);
         logger.action.debug(`u/${moderatorName} confirmed as moderator after live refresh; skipping`);
         return;
       }
@@ -267,10 +272,28 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       modDisplayName = "Anti-Evil Operations";
     }
 
+    let priorModActionNote = "";
+    const contentTargetId = getContentTargetId(action, event);
+    if (contentTargetId && (settings.sendModmail || webhookURLs.length > 0)) {
+      const priorModAction = await getCachedModAction(contentTargetId, context);
+      const adminActionTime = event.actionedAt instanceof Date ? event.actionedAt.getTime() : undefined;
+      if (priorModAction) {
+        if (
+          priorModAction.timestamp !== undefined &&
+          adminActionTime !== undefined &&
+          priorModAction.timestamp > adminActionTime
+        ) {
+          logger.cache.debug(`Ignored cached mod action for ${contentTargetId}: occurred after Admin action`);
+        } else {
+          priorModActionNote = ` (${formatPriorModAction(priorModAction)})`;
+        }
+      }
+    }
+
     // Send Modmail
     if (settings.sendModmail) {
       let msg = `**${modDisplayName}** has performed an action in r/${subredditName}:\n\n` +
-                `* **Action:** \`${action}\`` +
+                `* **Action:** \`${action}\`${priorModActionNote}` +
                 (permalink ? `\n* **Permalink:** ${permalink}` : "") +
                 (user ? `\n* **Target User:** u/${user}${ is_banned ? ` (Banned in r/${subredditName})`: "" }` : "") +
                 (url ? `\n* **URL${ usedCachedURL ? " (Cached)" : "" }:** ${url}` : "");
@@ -322,7 +345,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     const slackURLs = webhookURLs.filter((u) => u.startsWith("https://hooks.slack.com/"));
     if (slackURLs.length > 0) {
       const slackContextText = (
-        `*Action:* \`${action}\`` +
+        `*Action:* \`${action}\`${priorModActionNote}` +
         (permalink ? `\n*Permalink:* ${permalink}` : "") +
         (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>${ is_banned ? ` (Banned in r/${subredditName})`: "" }` : "") +
         (url ? `\n*URL${ usedCachedURL ? " (Cached)" : "" }:* ${url}` : "") +
@@ -402,7 +425,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
             fields: [
               {
                 name: "Action",
-                value: `\`${action}\``
+                value: `\`${action}\`${priorModActionNote}`
               }
             ]
           }
@@ -726,6 +749,113 @@ function quoteText(text: string): string {
  */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Extract the target content ID matching a content removal/approval ModAction
+ * @param event A ModAction object
+ * @returns Comment ID (for *comment actions) or Post ID (for *link actions), or undefined
+ */
+function getContentTargetId(action: string, event: ModAction): string | undefined {
+  if (COMMENT_MOD_ACTIONS.has(action)) {
+    return event.targetComment?.id || undefined;
+  }
+  if (POST_MOD_ACTIONS.has(action)) {
+    return event.targetPost?.id || undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Cache a local moderator, AutoModerator, or reddit content removal/approval action in Redis
+ * @param event A ModAction object
+ * @param context A TriggerContext object
+ */
+async function cacheModAction(event: ModAction, context: TriggerContext): Promise<void> {
+  const action = event.action;
+  const moderator = event.moderator?.name;
+  const targetId = action ? getContentTargetId(action, event) : undefined;
+  if (!action || !moderator || !targetId) {
+    return;
+  }
+
+  const key = `modaction:${targetId}`;
+  const timestamp = event.actionedAt instanceof Date ? event.actionedAt.getTime() : undefined;
+  const value: CachedModAction =
+    timestamp !== undefined ? { action, moderator, timestamp } : { action, moderator };
+  try {
+    await context.redis.set(key, JSON.stringify(value), {
+      expiration: new Date(Date.now() + CACHE_DURATION * 1000),
+    });
+    logger.cache.debug(`Wrote ${key} (${action} by ${moderator}) to Redis`);
+  } catch (e) {
+    logger.cache.error(`Error writing ${key} to Redis`, e);
+  }
+}
+
+/**
+ * Retrieve cached prior moderator content action for a post or comment
+ * @param targetId A post (t3_) or comment (t1_) fullname
+ * @param context A TriggerContext object
+ * @returns A Promise resolving to the cached prior mod action, or undefined
+ */
+async function getCachedModAction(
+  targetId: string,
+  context: TriggerContext
+): Promise<CachedModAction | undefined> {
+  const key = `modaction:${targetId}`;
+  let raw: string | undefined;
+  try {
+    raw = await context.redis.get(key);
+  } catch (e) {
+    logger.cache.error(`Error fetching cached mod action for ${targetId}`, e);
+    return undefined;
+  }
+
+  if (!raw) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<CachedModAction>;
+    if (typeof parsed.action === "string" && typeof parsed.moderator === "string") {
+      logger.cache.debug(`Retrieved cached mod action for ${targetId}: ${parsed.action} by ${parsed.moderator}`);
+      return {
+        action: parsed.action,
+        moderator: parsed.moderator,
+        ...(typeof parsed.timestamp === "number" ? { timestamp: parsed.timestamp } : {}),
+      };
+    }
+  } catch {
+    logger.cache.debug(`Ignored malformed cached mod action for ${targetId}`);
+  }
+  return undefined;
+}
+
+/**
+ * Format a cached prior moderator action as a human-readable phrase
+ * @param priorAction Cached prior moderator action
+ * @returns Formatted description (e.g. "Previously removed by u/AutoModerator")
+ */
+export function formatPriorModAction(priorAction: CachedModAction): string {
+  const actor =
+    priorAction.moderator.toLowerCase() === "reddit"
+      ? "reddit"
+      : `u/${priorAction.moderator}`;
+
+  switch (priorAction.action) {
+    case "removecomment":
+    case "removelink":
+      return `Previously removed by ${actor}`;
+    case "spamcomment":
+    case "spamlink":
+      return `Previously marked as spam by ${actor}`;
+    case "approvecomment":
+    case "approvelink":
+      return `Previously approved by ${actor}`;
+    default:
+      return `Previously actioned (${priorAction.action}) by ${actor}`;
+  }
 }
 
 /**

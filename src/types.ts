@@ -27,3 +27,15 @@ export type CachedPostData = {
   /** Post url */
   url: string;
 };
+
+/**
+ * Cached prior moderator content action
+ */
+export type CachedModAction = {
+  /** Moderator action type (e.g. removecomment, removelink, spamcomment, spamlink, approvecomment, approvelink) */
+  action: string;
+  /** Username of the moderator (or AutoModerator / reddit) who performed the action */
+  moderator: string;
+  /** Timestamp (ms since epoch) when the moderator action occurred */
+  timestamp?: number;
+};

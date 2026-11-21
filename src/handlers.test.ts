@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { cacheComment, cacheModerators, cachePost, checkModAction, formatRemovedFallback } from "./handlers.js";
+import { cacheComment, cacheModerators, cachePost, checkModAction, formatPriorModAction, formatRemovedFallback } from "./handlers.js";
 import type { TriggerContext } from "@devvit/public-api";
 import type { CommentSubmit, ModAction, PostSubmit } from "@devvit/protos";
 
@@ -2835,6 +2835,398 @@ describe("handlers", () => {
       expect(fetchMock.mock.calls[0][0]).toBe("https://hooks.slack.com/services/T1/B1/X");
       expect(fetchMock.mock.calls[1][0]).toBe("https://discord.com/api/webhooks/1/a");
       expect(fetchMock.mock.calls[2][0]).toBe("https://discord.com/api/webhooks/2/b");
+    });
+
+    it("caches prior content actions by local mods, AutoModerator, and reddit, and includes the latest in Admin notifications", async () => {
+      const store = new Map<string, string>([["mods", "localmod"]]);
+      const redisGet = vi.fn().mockImplementation(async (key: string) => store.get(key));
+      const redisSet = vi.fn().mockImplementation(async (key: string, value: string, opts?: { nx?: boolean }) => {
+        if (opts?.nx && store.has(key)) return undefined;
+        store.set(key, value);
+        return "OK";
+      });
+      const createModInboxConversation = vi.fn().mockResolvedValue("conv_prior");
+      const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: true,
+            modmailNotification: false,
+            archiveModmail: false,
+            webhookURL: "https://hooks.slack.com/services/T1/B1/X, https://discord.com/api/webhooks/1/a",
+            excludeContext: false,
+            addModNote: false,
+          }),
+        },
+        redis: {
+          get: redisGet,
+          set: redisSet,
+        },
+        reddit: {
+          modMail: {
+            createModInboxConversation,
+          },
+        },
+      } as unknown as TriggerContext;
+
+      // 1. AutoModerator removes a comment -> cached under modaction:t1_prior1
+      await checkModAction(
+        {
+          action: "removecomment",
+          moderator: { name: "AutoModerator" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_prior1", body: "Comment body" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(store.get("modaction:t1_prior1")).toBe(
+        JSON.stringify({ action: "removecomment", moderator: "AutoModerator" })
+      );
+
+      // 2. Local mod approves the same comment -> overwrites modaction:t1_prior1 with latest action
+      await checkModAction(
+        {
+          action: "approvecomment",
+          moderator: { name: "localmod" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_prior1", body: "Comment body" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(store.get("modaction:t1_prior1")).toBe(
+        JSON.stringify({ action: "approvecomment", moderator: "localmod" })
+      );
+
+      // 3. reddit removes a post -> cached under modaction:t3_prior2
+      await checkModAction(
+        {
+          action: "removelink",
+          moderator: { name: "reddit" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_prior2", title: "Post title" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(store.get("modaction:t3_prior2")).toBe(
+        JSON.stringify({ action: "removelink", moderator: "reddit" })
+      );
+
+      // 4. Non-content local mod action (e.g. lock) is NOT cached
+      await checkModAction(
+        {
+          action: "lock",
+          moderator: { name: "localmod" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_lockonly", title: "Locked post" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(store.has("modaction:t3_lockonly")).toBe(false);
+
+      // 5. AEO removes the comment -> Modmail, Slack, and Discord all include "(Previously approved by u/localmod)"
+      await checkModAction(
+        {
+          id: "ModAction_prior_aeo",
+          action: "removecomment",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_prior1", body: "Comment body" },
+        } as unknown as ModAction,
+        mockContext
+      );
+
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+      expect(createModInboxConversation.mock.calls[0][0].bodyMarkdown).toContain(
+        "* **Action:** `removecomment` (Previously approved by u/localmod)"
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const slackBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(slackBody.attachments[0].blocks[0].elements[0].text).toContain(
+        "*Action:* `removecomment` (Previously approved by u/localmod)"
+      );
+
+      const discordBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+      expect(discordBody.embeds[0].fields[0]).toEqual({
+        name: "Action",
+        value: "`removecomment` (Previously approved by u/localmod)",
+      });
+
+      // 6. AEO removes the post previously removed by reddit -> shows "(Previously removed by reddit)"
+      await checkModAction(
+        {
+          id: "ModAction_prior_reddit",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_prior2", title: "Post title" },
+        } as unknown as ModAction,
+        mockContext
+      );
+
+      expect(createModInboxConversation).toHaveBeenCalledTimes(2);
+      expect(createModInboxConversation.mock.calls[1][0].bodyMarkdown).toContain(
+        "* **Action:** `removelink` (Previously removed by reddit)"
+      );
+    });
+
+    it("caches prior mod action after live modlist refresh and handles Redis errors gracefully", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const redisSet = vi
+        .fn()
+        .mockResolvedValueOnce("OK") // cacheModerators("mods", ...)
+        .mockRejectedValueOnce(new Error("Redis write failed")); // cacheModAction("modaction:t1_newmod", ...)
+
+      const refreshContext = {
+        settings: { getAll: vi.fn() },
+        redis: {
+          get: vi.fn().mockResolvedValue("oldmod"),
+          set: redisSet,
+        },
+        reddit: {
+          getCurrentSubreddit: vi.fn().mockResolvedValue({
+            name: "testsub",
+            getModerators: vi.fn().mockReturnValue(
+              (async function* () {
+                yield { username: "oldmod" };
+                yield { username: "freshmod" };
+              })()
+            ),
+          }),
+        },
+      } as unknown as TriggerContext;
+
+      await checkModAction(
+        {
+          action: "removecomment",
+          moderator: { name: "freshmod" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_newmod", body: "Comment" },
+        } as unknown as ModAction,
+        refreshContext
+      );
+
+      expect(redisSet).toHaveBeenCalledWith(
+        "modaction:t1_newmod",
+        JSON.stringify({ action: "removecomment", moderator: "freshmod" }),
+        expect.objectContaining({ expiration: expect.any(Date) })
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[cache] Error writing modaction:t1_newmod to Redis",
+        expect.any(Error)
+      );
+
+      // Also verify getCachedModAction handles Redis read errors and returns gracefully
+      const createModInboxConversation = vi.fn().mockResolvedValue("conv_err");
+      const readErrContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: true,
+            modmailNotification: false,
+            archiveModmail: false,
+            webhookURL: "",
+            excludeContext: false,
+            addModNote: false,
+          }),
+        },
+        redis: {
+          get: vi.fn().mockImplementation(async (key: string) => {
+            if (key === "mods") return "localmod";
+            if (key === "modaction:t1_readerr") throw new Error("Redis read failed");
+            return undefined;
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          modMail: {
+            createModInboxConversation,
+          },
+        },
+      } as unknown as TriggerContext;
+
+      await checkModAction(
+        {
+          id: "ModAction_prior_readerr",
+          action: "removecomment",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_readerr", body: "Comment" },
+        } as unknown as ModAction,
+        readErrContext
+      );
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[cache] Error fetching cached mod action for t1_readerr",
+        expect.any(Error)
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+      expect(createModInboxConversation.mock.calls[0][0].bodyMarkdown).toContain(
+        "* **Action:** `removecomment`\n"
+      );
+
+      errorSpy.mockRestore();
+    });
+
+    it("matches target ID to action type, ignores subsequent out-of-order mod actions, and skips lookup in addModNote-only mode", async () => {
+      const store = new Map<string, string>([["mods", "localmod"]]);
+      const redisGet = vi.fn().mockImplementation(async (key: string) => store.get(key));
+      const redisSet = vi.fn().mockImplementation(async (key: string, value: string, opts?: { nx?: boolean }) => {
+        if (opts?.nx && store.has(key)) return undefined;
+        store.set(key, value);
+        return "OK";
+      });
+      const createModInboxConversation = vi.fn().mockResolvedValue("conv_ts");
+      const addModNote = vi.fn().mockResolvedValue({});
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: true,
+            modmailNotification: false,
+            archiveModmail: false,
+            webhookURL: "",
+            excludeContext: false,
+            addModNote: false,
+          }),
+        },
+        redis: {
+          get: redisGet,
+          set: redisSet,
+        },
+        reddit: {
+          modMail: {
+            createModInboxConversation,
+          },
+          addModNote,
+        },
+      } as unknown as TriggerContext;
+
+      // 1. removecomment missing targetComment.id (even with targetPost.id set) does NOT pollute parent post cache
+      await checkModAction(
+        {
+          action: "removecomment",
+          moderator: { name: "AutoModerator" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_parent_only", title: "Parent post" },
+          targetComment: { id: "" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(store.has("modaction:t3_parent_only")).toBe(false);
+
+      // 2. removelink with empty proto3 targetComment.id ("") still caches under targetPost.id with timestamp
+      const modTime = new Date("2026-11-20T10:00:05.000Z");
+      await checkModAction(
+        {
+          action: "removelink",
+          actionedAt: modTime,
+          moderator: { name: "localmod" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_post_ts", title: "Post" },
+          targetComment: { id: "" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(store.get("modaction:t3_post_ts")).toBe(
+        JSON.stringify({ action: "removelink", moderator: "localmod", timestamp: modTime.getTime() })
+      );
+
+      // 3. Admin action that actually happened EARLIER than the cached mod action (out-of-order delivery) omits "Previously ..."
+      await checkModAction(
+        {
+          id: "ModAction_earlier_admin",
+          action: "removelink",
+          actionedAt: new Date("2026-11-20T10:00:00.000Z"),
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_post_ts", title: "Post" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+      expect(createModInboxConversation.mock.calls[0][0].bodyMarkdown).toContain(
+        "* **Action:** `removelink`\n"
+      );
+      expect(createModInboxConversation.mock.calls[0][0].bodyMarkdown).not.toContain("Previously");
+
+      // 4. Admin action that happened LATER than the cached mod action DOES include "Previously ..."
+      await checkModAction(
+        {
+          id: "ModAction_later_admin",
+          action: "removelink",
+          actionedAt: new Date("2026-11-20T10:00:10.000Z"),
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_post_ts", title: "Post" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(2);
+      expect(createModInboxConversation.mock.calls[1][0].bodyMarkdown).toContain(
+        "* **Action:** `removelink` (Previously removed by u/localmod)"
+      );
+
+      // 5. addModNote-only mode (no Modmail or webhooks) skips modaction Redis lookup
+      redisGet.mockClear();
+      const modNoteOnlyContext = {
+        ...mockContext,
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: false,
+            modmailNotification: false,
+            archiveModmail: false,
+            webhookURL: "",
+            excludeContext: false,
+            addModNote: true,
+          }),
+        },
+        reddit: {
+          addModNote,
+          getBannedUsers: vi.fn().mockResolvedValue({ all: vi.fn().mockResolvedValue([]) }),
+        },
+      } as unknown as TriggerContext;
+
+      await checkModAction(
+        {
+          id: "ModAction_modnote_only",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_post_ts", title: "Post" },
+          targetUser: { name: "baduser" },
+        } as unknown as ModAction,
+        modNoteOnlyContext
+      );
+      expect(redisGet).not.toHaveBeenCalledWith("modaction:t3_post_ts");
+      expect(addModNote).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("formatPriorModAction", () => {
+    it("formats removal, spam, approval, and fallback actions for mods, AutoModerator, and reddit", () => {
+      expect(formatPriorModAction({ action: "removecomment", moderator: "AutoModerator" })).toBe(
+        "Previously removed by u/AutoModerator"
+      );
+      expect(formatPriorModAction({ action: "removelink", moderator: "reddit" })).toBe(
+        "Previously removed by reddit"
+      );
+      expect(formatPriorModAction({ action: "spamcomment", moderator: "localmod" })).toBe(
+        "Previously marked as spam by u/localmod"
+      );
+      expect(formatPriorModAction({ action: "spamlink", moderator: "localmod" })).toBe(
+        "Previously marked as spam by u/localmod"
+      );
+      expect(formatPriorModAction({ action: "approvecomment", moderator: "localmod" })).toBe(
+        "Previously approved by u/localmod"
+      );
+      expect(formatPriorModAction({ action: "approvelink", moderator: "localmod" })).toBe(
+        "Previously approved by u/localmod"
+      );
+      expect(formatPriorModAction({ action: "lock", moderator: "localmod" })).toBe(
+        "Previously actioned (lock) by u/localmod"
+      );
     });
   });
 
