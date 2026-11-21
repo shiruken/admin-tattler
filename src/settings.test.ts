@@ -4,17 +4,28 @@ import type { Devvit, SettingsFormField, TriggerContext } from "@devvit/public-a
 
 type NamedFormField = Extract<SettingsFormField, { name: string }>;
 
+function flattenNamedFields(fields: SettingsFormField[]): NamedFormField[] {
+  return fields.flatMap((field) =>
+    field.type === "group" ? flattenNamedFields(field.fields) : [field]
+  );
+}
+
 function findNamedField(name: string): NamedFormField | undefined {
-  return settings.find((s): s is NamedFormField => "name" in s && s.name === name);
+  return flattenNamedFields(settings).find((s) => s.name === name);
 }
 
 describe("settings", () => {
-  it("defines the expected form fields", () => {
-    expect(settings).toHaveLength(5);
+  it("defines the expected grouped form fields", () => {
+    expect(settings).toHaveLength(3);
+    expect(settings.map((s) => s.label)).toEqual(["Modmail", "Slack or Discord", "Options"]);
 
     const sendModmail = findNamedField("sendModmail");
     expect(sendModmail).toBeDefined();
     expect(sendModmail?.defaultValue).toBe(true);
+
+    const modmailNotification = findNamedField("modmailNotification");
+    expect(modmailNotification).toBeDefined();
+    expect(modmailNotification?.defaultValue).toBe(false);
 
     const archiveModmail = findNamedField("archiveModmail");
     expect(archiveModmail).toBeDefined();

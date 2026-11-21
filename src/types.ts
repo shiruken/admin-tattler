@@ -4,6 +4,8 @@
 export type Settings = {
   /** Enable reports via Modmail */
   sendModmail: boolean;
+  /** Route Modmail reports into the Notifications folder */
+  modmailNotification: boolean;
   /** Automatically archive Modmail reports after sending */
   archiveModmail: boolean;
   /** Slack or Discord webhook URL */

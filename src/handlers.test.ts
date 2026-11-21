@@ -2747,6 +2747,54 @@ describe("handlers", () => {
       debugSpy.mockRestore();
       errorSpy.mockRestore();
     });
+
+    it("prepends [Notification] to Modmail subject when modmailNotification is enabled", async () => {
+      const createModInboxConversation = vi.fn().mockResolvedValue("conv_notif");
+      const archiveConversation = vi.fn().mockResolvedValue({});
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: true,
+            modmailNotification: true,
+            archiveModmail: true,
+            webhookURL: "",
+            excludeContext: false,
+            addModNote: false,
+          }),
+        },
+        redis: {
+          get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          modMail: {
+            createModInboxConversation,
+            archiveConversation,
+          },
+        },
+      } as unknown as TriggerContext;
+
+      await checkModAction(
+        {
+          id: "ModAction_notif_folder",
+          action: "removecomment",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_notif1", body: "Test comment" },
+        } as unknown as ModAction,
+        mockContext
+      );
+
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+      expect(createModInboxConversation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subredditId: "t5_testsub",
+          subject: "[Notification] Admin Action Detected: removecomment",
+        })
+      );
+      expect(archiveConversation).toHaveBeenCalledWith("conv_notif");
+    });
   });
 
   describe("formatRemovedFallback", () => {

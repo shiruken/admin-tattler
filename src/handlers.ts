@@ -293,10 +293,11 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
              `Configure settings [here](https://developers.reddit.com/r/${subredditName}/apps/admin-tattler).`;
       const rawSubredditId = subreddit.id || context.subredditId || "";
       const subredditId = (rawSubredditId.startsWith("t5_") ? rawSubredditId : `t5_${rawSubredditId}`) as `t5_${string}`;
+      const subjectPrefix = settings.modmailNotification ? "[Notification] " : "";
       const conversationId = await context.reddit.modMail
         .createModInboxConversation({
           subredditId,
-          subject: `Admin Action Detected: ${action}`,
+          subject: `${subjectPrefix}Admin Action Detected: ${action}`,
           bodyMarkdown: msg,
         })
         .then((id) => {
