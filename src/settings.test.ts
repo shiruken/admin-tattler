@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getValidatedSettings, settings } from "./settings.js";
+import { getValidatedSettings, parseWebhookURLs, settings } from "./settings.js";
 import type { Devvit, SettingsFormField, TriggerContext } from "@devvit/public-api";
 
 type NamedFormField = Extract<SettingsFormField, { name: string }>;
@@ -44,6 +44,25 @@ describe("settings", () => {
     expect(addModNote?.defaultValue).toBe(false);
   });
 
+  describe("parseWebhookURLs", () => {
+    it("returns empty array for empty, whitespace, or undefined input", () => {
+      expect(parseWebhookURLs(undefined)).toEqual([]);
+      expect(parseWebhookURLs("")).toEqual([]);
+      expect(parseWebhookURLs("   ,  , ")).toEqual([]);
+    });
+
+    it("splits, trims, ignores empty entries, and deduplicates URLs", () => {
+      expect(
+        parseWebhookURLs(
+          " https://hooks.slack.com/services/A/B/C , https://discord.com/api/webhooks/1/2, , https://hooks.slack.com/services/A/B/C "
+        )
+      ).toEqual([
+        "https://hooks.slack.com/services/A/B/C",
+        "https://discord.com/api/webhooks/1/2",
+      ]);
+    });
+  });
+
   describe("validateWebhookURL", () => {
     const webhookSetting = findNamedField("webhookURL");
     const validator = webhookSetting && "onValidate" in webhookSetting ? webhookSetting.onValidate : undefined;
@@ -62,10 +81,30 @@ describe("settings", () => {
       expect(validator?.({ value: "https://discord.com/api/webhooks/123/abc" } as never, dummyContext)).toBeUndefined();
     });
 
-    it("rejects invalid webhook URLs", () => {
+    it("accepts multiple comma-separated valid Slack and Discord webhook URLs", () => {
+      expect(
+        validator?.(
+          {
+            value:
+              "https://hooks.slack.com/services/T00/B00/X, https://discord.com/api/webhooks/123/abc",
+          } as never,
+          dummyContext
+        )
+      ).toBeUndefined();
+    });
+
+    it("rejects invalid webhook URLs including mixed valid and invalid lists", () => {
       expect(validator?.({ value: "https://example.com/webhook" } as never, dummyContext)).toBe(
-        "Must be valid Slack or Discord webhook URL"
+        "Must be valid Slack or Discord webhook URL(s)"
       );
+      expect(
+        validator?.(
+          {
+            value: "https://hooks.slack.com/services/T00/B00/X, https://example.com/bad",
+          } as never,
+          dummyContext
+        )
+      ).toBe("Must be valid Slack or Discord webhook URL(s)");
     });
   });
 

@@ -8,7 +8,7 @@ export type Settings = {
   modmailNotification: boolean;
   /** Automatically archive Modmail reports after sending */
   archiveModmail: boolean;
-  /** Slack or Discord webhook URL */
+  /** Comma-separated Slack or Discord webhook URLs */
   webhookURL: string;
   /** Exclude post/comment context from reports */
   excludeContext: boolean;

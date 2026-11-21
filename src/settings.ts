@@ -36,8 +36,8 @@ export const settings: SettingsFormField[] = [
       {
         type: "string",
         name: "webhookURL",
-        label: "Webhook URL",
-        helpText: "Enter webhook URL to send reports via Slack or Discord",
+        label: "Webhook URLs",
+        helpText: "Enter one or more comma-separated Slack or Discord webhook URLs",
         defaultValue: "",
         onValidate: validateWebhookURL,
       },
@@ -66,18 +66,41 @@ export const settings: SettingsFormField[] = [
 ];
 
 /**
- * Validates webhook URL string from app configuration
+ * Parse comma-separated webhook URLs, trimming whitespace and removing empty/duplicate entries
+ * @param webhookURL Optional comma-separated webhook URL string
+ * @returns Array of unique non-empty webhook URL strings
+ */
+export function parseWebhookURLs(webhookURL?: string): string[] {
+  if (!webhookURL) {
+    return [];
+  }
+  return [
+    ...new Set(
+      webhookURL
+        .split(",")
+        .map((url) => url.trim())
+        .filter((url) => url.length > 0)
+    ),
+  ];
+}
+
+/**
+ * Validates webhook URL string(s) from app configuration
  * @param event A SettingsFormFieldValidatorEvent object
  * @returns Returns a string containing an error message if invalid
  */
 function validateWebhookURL(event: SettingsFormFieldValidatorEvent<string>): void | string {
-  if (event.value &&
-    !(
-      event.value?.startsWith("https://hooks.slack.com/") ||
-      event.value?.startsWith("https://discord.com/api/webhooks/")
+  const urls = parseWebhookURLs(event.value);
+  if (
+    urls.some(
+      (url) =>
+        !(
+          url.startsWith("https://hooks.slack.com/") ||
+          url.startsWith("https://discord.com/api/webhooks/")
+        )
     )
   ) {
-    return "Must be valid Slack or Discord webhook URL";
+    return "Must be valid Slack or Discord webhook URL(s)";
   }
 }
 

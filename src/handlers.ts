@@ -1,7 +1,7 @@
 import { TriggerContext } from "@devvit/public-api";
 import { CommentSubmit, CommentUpdate, ModAction, PostSubmit, PostUpdate } from '@devvit/protos';
 import { CachedPostData } from "./types.js";
-import { getValidatedSettings } from "./settings.js";
+import { getValidatedSettings, parseWebhookURLs } from "./settings.js";
 import { logger } from "./logger.js";
 
 const CACHE_DURATION = 60*60*24*30; // 30 days
@@ -112,9 +112,10 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
   }
 
   const settings = await getValidatedSettings(context);
+  const webhookURLs = parseWebhookURLs(settings.webhookURL);
 
   // If all reporting routes and mod notes are disabled, skip processing
-  if (!settings.sendModmail && !settings.webhookURL && !settings.addModNote) {
+  if (!settings.sendModmail && webhookURLs.length === 0 && !settings.addModNote) {
     logger.action.debug(`Ignored ${action} by ${moderatorName}: all reporting routes and mod notes are disabled`);
     return;
   }
@@ -318,7 +319,8 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     }
 
     // Send to Slack
-    if (settings.webhookURL && settings.webhookURL.startsWith("https://hooks.slack.com/")) {
+    const slackURLs = webhookURLs.filter((u) => u.startsWith("https://hooks.slack.com/"));
+    if (slackURLs.length > 0) {
       const slackContextText = (
         `*Action:* \`${action}\`` +
         (permalink ? `\n*Permalink:* ${permalink}` : "") +
@@ -368,24 +370,28 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
           }
         ]
       };
-      await fetch(settings.webhookURL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(slackPayload),
-      })
-        .then((res) => {
-          if (!res.ok) {
-            throw new Error(`HTTP ${res.status} ${res.statusText}`);
-          }
-          logger.notify.info(`Sent Slack message about ${action} by ${moderatorName}`);
+      const slackBody = JSON.stringify(slackPayload);
+      for (const slackURL of slackURLs) {
+        await fetch(slackURL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: slackBody,
         })
-        .catch((e) => logger.notify.error(`Error sending Slack message about ${action} by ${moderatorName}`, e));
+          .then((res) => {
+            if (!res.ok) {
+              throw new Error(`HTTP ${res.status} ${res.statusText}`);
+            }
+            logger.notify.info(`Sent Slack message about ${action} by ${moderatorName}`);
+          })
+          .catch((e) => logger.notify.error(`Error sending Slack message about ${action} by ${moderatorName}`, e));
+      }
     }
 
     // Send to Discord
-    if (settings.webhookURL && settings.webhookURL.startsWith("https://discord.com/api/webhooks/")) {
+    const discordURLs = webhookURLs.filter((u) => u.startsWith("https://discord.com/api/webhooks/"));
+    if (discordURLs.length > 0) {
       const discordPayload = {
         username: "Admin Tattler",
         avatar_url: "https://raw.githubusercontent.com/shiruken/admin-tattler/main/assets/icon.png",
@@ -443,20 +449,23 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         value: `[Link](${modlogLink})`
       });
 
-      await fetch(settings.webhookURL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(discordPayload),
-      })
-        .then((res) => {
-          if (!res.ok) {
-            throw new Error(`HTTP ${res.status} ${res.statusText}`);
-          }
-          logger.notify.info(`Sent Discord message about ${action} by ${moderatorName}`);
+      const discordBody = JSON.stringify(discordPayload);
+      for (const discordURL of discordURLs) {
+        await fetch(discordURL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: discordBody,
         })
-        .catch((e) => logger.notify.error(`Error sending Discord message about ${action} by ${moderatorName}`, e));
+          .then((res) => {
+            if (!res.ok) {
+              throw new Error(`HTTP ${res.status} ${res.statusText}`);
+            }
+            logger.notify.info(`Sent Discord message about ${action} by ${moderatorName}`);
+          })
+          .catch((e) => logger.notify.error(`Error sending Discord message about ${action} by ${moderatorName}`, e));
+      }
     }
 
     // Add Mod Note for content removals

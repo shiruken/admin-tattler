@@ -2795,6 +2795,47 @@ describe("handlers", () => {
       );
       expect(archiveConversation).toHaveBeenCalledWith("conv_notif");
     });
+
+    it("dispatches to multiple comma-separated Slack and Discord webhooks", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: false,
+            modmailNotification: false,
+            archiveModmail: false,
+            webhookURL:
+              " https://hooks.slack.com/services/T1/B1/X , https://discord.com/api/webhooks/1/a, https://discord.com/api/webhooks/2/b , https://hooks.slack.com/services/T1/B1/X ",
+            excludeContext: false,
+            addModNote: false,
+          }),
+        },
+        redis: {
+          get: vi.fn().mockResolvedValue("localmod"),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {},
+      } as unknown as TriggerContext;
+
+      await checkModAction(
+        {
+          id: "ModAction_multi_webhook",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_multi", title: "Multi Webhook Post" },
+        } as unknown as ModAction,
+        mockContext
+      );
+
+      // 1 deduplicated Slack webhook + 2 distinct Discord webhooks = 3 calls
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock.mock.calls[0][0]).toBe("https://hooks.slack.com/services/T1/B1/X");
+      expect(fetchMock.mock.calls[1][0]).toBe("https://discord.com/api/webhooks/1/a");
+      expect(fetchMock.mock.calls[2][0]).toBe("https://discord.com/api/webhooks/2/b");
+    });
   });
 
   describe("formatRemovedFallback", () => {
