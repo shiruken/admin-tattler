@@ -262,7 +262,9 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     let modDisplayName = moderatorName;
     let modlogLinkDesc = "View Admin Modlog";
     let modlogLink = `https://www.reddit.com/mod/${subredditName}/log?moderatorNames=a`;
-    if (moderatorName != "Anti-Evil Operations" && moderatorName != "Reddit Legal" && moderatorName != "[ Redacted ]") {
+    if (isPlaytestDev && isMod) {
+      modDisplayName = "Anti-Evil Operations";
+    } else if (moderatorName != "Anti-Evil Operations" && moderatorName != "Reddit Legal" && moderatorName != "[ Redacted ]") {
       modDisplayName = `u/${moderatorName}`;
       modlogLinkDesc = "View Modlog";
       modlogLink = `https://www.reddit.com/mod/${subredditName}/log?moderatorNames=${moderatorName}`;

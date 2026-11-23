@@ -599,7 +599,9 @@ describe("handlers", () => {
       await checkModAction(event, mockContext);
       expect(createModInboxConversation).toHaveBeenCalledTimes(1);
       const modmailArgs = createModInboxConversation.mock.calls[0][0];
-      expect(modmailArgs.bodyMarkdown).toContain("u/shiruken");
+      expect(modmailArgs.bodyMarkdown).toContain("**Anti-Evil Operations** has performed an action in r/admin_tattler_dev");
+      expect(modmailArgs.bodyMarkdown).toContain("[**View Admin Modlog**](https://www.reddit.com/mod/admin_tattler_dev/log?moderatorNames=a)");
+      expect(modmailArgs.bodyMarkdown).not.toContain("u/shiruken");
     });
 
     it("does not simulate admin action in admin_tattler_dev on production release version", async () => {
