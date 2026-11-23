@@ -127,13 +127,13 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
   // Ignore unsticky actions on content that has been deleted
   if (action === "unsticky" && await isUnstickyTargetDeleted(event, context)) {
-    const targetId = event.targetComment?.id ?? event.targetPost?.id ?? "unknown";
+    const targetId = event.targetComment?.id || event.targetPost?.id || "unknown";
     logger.action.debug(`Ignored unsticky on deleted content (${targetId})`);
     return;
   }
 
   // Deduplicate mod actions to prevent duplicate alerts if Devvit redelivers the event
-  const targetIdentifier = event.targetPost?.id ?? event.targetComment?.id ?? event.targetUser?.name ?? "";
+  const targetIdentifier = event.targetComment?.id || event.targetPost?.id || event.targetUser?.name || "";
   const timestamp = event.actionedAt instanceof Date ? event.actionedAt.getTime() : (event.actionedAt ?? "");
   const dedupId = event.id ? `id:${event.id}` : `${action}:${targetIdentifier}:${timestamp}`;
   const dedupKey = `dedup:action:${dedupId}`;
@@ -305,7 +305,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       }
 
       if (!settings.excludeContext && body) {
-        const bodyLabel = `${targetComment ? "Comment" : "Body"}${ usedCachedBody ? " (Cached)" : "" }`;
+        const bodyLabel = `${targetComment?.id ? "Comment" : "Body"}${ usedCachedBody ? " (Cached)" : "" }`;
         if (body.startsWith("[ Removed by Reddit ]") || body === "[deleted]" || body === "[removed]") {
           msg += `\n* **${bodyLabel}:** ${body}`;
         } else {
@@ -755,6 +755,7 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Extract the target content ID matching a content removal/approval ModAction
+ * @param action The ModAction action string
  * @param event A ModAction object
  * @returns Comment ID (for *comment actions) or Post ID (for *link actions), or undefined
  */
