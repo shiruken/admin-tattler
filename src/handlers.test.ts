@@ -3346,6 +3346,142 @@ describe("handlers", () => {
       );
       expect(createModInboxConversation.mock.calls[1][0].bodyMarkdown).not.toContain("(Cached)");
     });
+
+    it("deletes matching app-created Mod Notes on Admin content approvals and handles errors gracefully", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const deleteModNote = vi
+        .fn()
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false)
+        .mockRejectedValueOnce(new Error("Delete failed"));
+
+      const getModNotes = vi
+        .fn()
+        .mockReturnValueOnce({
+          all: vi.fn().mockResolvedValue([
+            // Matching app note for t1_reinstated -> deleted (true)
+            {
+              id: "ModNote_match1",
+              operator: { name: "admin-tattler" },
+              userNote: { redditId: "t1_reinstated", note: "Anti-Evil Operations Removal" },
+            },
+            // Human mod note on same comment -> must NOT be deleted
+            {
+              id: "ModNote_human",
+              operator: { name: "localmod" },
+              userNote: { redditId: "t1_reinstated", note: "Manual warning" },
+            },
+            // App note on a different comment -> must NOT be deleted
+            {
+              id: "ModNote_other",
+              operator: { name: "admin-tattler" },
+              userNote: { redditId: "t1_different", note: "Anti-Evil Operations Removal" },
+            },
+            // Second matching app note -> deleteModNote returns false (warns)
+            {
+              id: "ModNote_match2",
+              operator: { name: "Admin-Tattler" },
+              userNote: { redditId: "t1_reinstated", note: "Anti-Evil Operations Removal" },
+            },
+            // Third matching app note -> deleteModNote throws (logs error)
+            {
+              id: "ModNote_match3",
+              operator: { name: "admin-tattler" },
+              userNote: { redditId: "t1_reinstated", note: "Anti-Evil Operations Removal" },
+            },
+          ]),
+        })
+        .mockReturnValueOnce({
+          all: vi.fn().mockRejectedValue(new Error("Fetch notes failed")),
+        });
+
+      const mockContext = {
+        appSlug: "admin-tattler",
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: false,
+            modmailNotification: false,
+            archiveModmail: false,
+            webhookURL: "",
+            excludeContext: false,
+            addModNote: true,
+          }),
+        },
+        redis: {
+          get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          getBannedUsers: vi.fn().mockResolvedValue({ all: vi.fn().mockResolvedValue([]) }),
+          getModNotes,
+          deleteModNote,
+        },
+      } as unknown as TriggerContext;
+
+      // 1. Admin approvecomment -> deletes only the 3 matching app notes
+      await checkModAction(
+        {
+          id: "ModAction_approve_note_1",
+          action: "approvecomment",
+          moderator: { name: "Reddit Legal" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_reinstated", body: "Restored comment" },
+          targetUser: { name: "appealed_user" },
+        } as unknown as ModAction,
+        mockContext
+      );
+
+      expect(getModNotes).toHaveBeenCalledWith({
+        subreddit: "testsub",
+        user: "appealed_user",
+        filter: "NOTE",
+        limit: 100,
+      });
+      expect(deleteModNote).toHaveBeenCalledTimes(3);
+      expect(deleteModNote).toHaveBeenNthCalledWith(1, {
+        subreddit: "testsub",
+        user: "appealed_user",
+        noteId: "ModNote_match1",
+      });
+      expect(deleteModNote).toHaveBeenNthCalledWith(2, {
+        subreddit: "testsub",
+        user: "appealed_user",
+        noteId: "ModNote_match2",
+      });
+      expect(deleteModNote).toHaveBeenNthCalledWith(3, {
+        subreddit: "testsub",
+        user: "appealed_user",
+        noteId: "ModNote_match3",
+      });
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[notify] Failed to delete mod note ModNote_match2 from t1_reinstated"
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[notify] Error deleting mod note ModNote_match3 from t1_reinstated",
+        expect.any(Error)
+      );
+
+      // 2. Admin approvelink where getModNotes fails -> logs error gracefully
+      await checkModAction(
+        {
+          id: "ModAction_approve_note_2",
+          action: "approvelink",
+          moderator: { name: "Reddit Legal" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_reinstated", title: "Restored post" },
+          targetUser: { name: "appealed_user" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[notify] Error fetching mod notes for u/appealed_user on t3_reinstated",
+        expect.any(Error)
+      );
+
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
   });
 
   describe("isRemovedByReddit and isRedactedContent", () => {

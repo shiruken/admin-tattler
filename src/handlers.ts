@@ -521,6 +521,46 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         .then(() => logger.notify.info(`Added mod note to ${targetID}`))
         .catch((e) => logger.notify.error(`Error adding mod note to ${targetID}`, e));
     }
+
+    // Delete app-created Mod Note(s) if content is re-approved by Admins
+    if (
+      settings.addModNote && user && user.toLowerCase() != "automoderator" && targetID &&
+      (action == "approvelink" || action == "approvecomment")
+    ) {
+      try {
+        const notes = await context.reddit
+          .getModNotes({
+            subreddit: subredditName,
+            user: user,
+            filter: "NOTE",
+            limit: 100,
+          })
+          .all();
+        const matchingNotes = notes.filter(
+          (note) =>
+            note.operator.name?.toLowerCase() === appSlugLower &&
+            note.userNote?.redditId === targetID
+        );
+        for (const note of matchingNotes) {
+          await context.reddit
+            .deleteModNote({
+              subreddit: subredditName,
+              user: user,
+              noteId: note.id,
+            })
+            .then((deleted) => {
+              if (deleted) {
+                logger.notify.info(`Deleted mod note ${note.id} from ${targetID}`);
+              } else {
+                logger.notify.warn(`Failed to delete mod note ${note.id} from ${targetID}`);
+              }
+            })
+            .catch((e) => logger.notify.error(`Error deleting mod note ${note.id} from ${targetID}`, e));
+        }
+      } catch (e) {
+        logger.notify.error(`Error fetching mod notes for u/${user} on ${targetID}`, e);
+      }
+    }
 }
 
 /**
