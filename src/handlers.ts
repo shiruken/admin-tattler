@@ -329,20 +329,46 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       const rawSubredditId = subreddit.id || context.subredditId || "";
       const subredditId = (rawSubredditId.startsWith("t5_") ? rawSubredditId : `t5_${rawSubredditId}`) as `t5_${string}`;
       const subjectPrefix = settings.modmailNotification ? "[Notification] " : "";
-      const conversationId = await context.reddit.modMail
-        .createModInboxConversation({
-          subredditId,
-          subject: `${subjectPrefix}Admin Action Detected: ${action}`,
-          bodyMarkdown: msg,
-        })
-        .then((id) => {
-          logger.notify.info(`Sent modmail about ${action} by ${moderatorName}`);
-          return id;
-        })
-        .catch((e) => {
-          logger.notify.error(`Error sending modmail about ${action} by ${moderatorName}`, e);
-          return undefined;
-        });
+      let conversationId: string | undefined;
+
+      // Reply to existing Modmail conversation if Admins previously actioned this post or comment
+      if (targetID) {
+        const existingConversationId = await getCachedModmailId(targetID, context);
+        if (existingConversationId) {
+          try {
+            await context.reddit.modMail.reply({
+              conversationId: existingConversationId,
+              body: msg,
+              isInternal: true,
+            });
+            conversationId = existingConversationId;
+            logger.notify.info(`Replied to modmail conversation ${existingConversationId} about ${action} by ${moderatorName}`);
+          } catch (e) {
+            logger.notify.warn(`Error replying to modmail conversation ${existingConversationId}; creating new conversation`, e);
+          }
+        }
+      }
+
+      if (!conversationId) {
+        conversationId = await context.reddit.modMail
+          .createModInboxConversation({
+            subredditId,
+            subject: `${subjectPrefix}Admin Action Detected: ${action}`,
+            bodyMarkdown: msg,
+          })
+          .then((id) => {
+            logger.notify.info(`Sent modmail about ${action} by ${moderatorName}`);
+            return id;
+          })
+          .catch((e) => {
+            logger.notify.error(`Error sending modmail about ${action} by ${moderatorName}`, e);
+            return undefined;
+          });
+      }
+
+      if (conversationId && targetID) {
+        await cacheModmailId(targetID, conversationId, context);
+      }
 
       if (settings.archiveModmail && conversationId) {
         await context.reddit.modMail
@@ -797,6 +823,51 @@ function quoteText(text: string): string {
  */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Cache a Modmail conversation ID for an actioned post or comment so follow-up Admin actions can reply to it
+ * @param targetId A post (t3_) or comment (t1_) fullname
+ * @param conversationId The Modmail conversation ID
+ * @param context A TriggerContext object
+ */
+async function cacheModmailId(
+  targetId: string,
+  conversationId: string,
+  context: TriggerContext
+): Promise<void> {
+  const key = `modmail:${targetId}`;
+  try {
+    await context.redis.set(key, conversationId, {
+      expiration: new Date(Date.now() + CACHE_DURATION * 1000),
+    });
+    logger.cache.debug(`Wrote ${key} (${conversationId}) to Redis`);
+  } catch (e) {
+    logger.cache.error(`Error writing ${key} to Redis`, e);
+  }
+}
+
+/**
+ * Retrieve cached Modmail conversation ID for a post or comment
+ * @param targetId A post (t3_) or comment (t1_) fullname
+ * @param context A TriggerContext object
+ * @returns A Promise resolving to the cached Modmail conversation ID, or undefined
+ */
+async function getCachedModmailId(
+  targetId: string,
+  context: TriggerContext
+): Promise<string | undefined> {
+  const key = `modmail:${targetId}`;
+  try {
+    const conversationId = await context.redis.get(key);
+    if (conversationId) {
+      logger.cache.info(`Retrieved cached modmail conversation ${conversationId} for ${targetId}`);
+      return conversationId;
+    }
+  } catch (e) {
+    logger.cache.error(`Error fetching cached modmail conversation for ${targetId}`, e);
+  }
+  return undefined;
 }
 
 /**

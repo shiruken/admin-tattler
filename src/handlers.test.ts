@@ -3482,6 +3482,200 @@ describe("handlers", () => {
       warnSpy.mockRestore();
       errorSpy.mockRestore();
     });
+
+    it("threads follow-up Admin actions on the same content into the original Modmail conversation and falls back cleanly", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const store = new Map<string, string>([["mods", "localmod"]]);
+      const redisGet = vi.fn().mockImplementation(async (key: string) => store.get(key));
+      const redisSet = vi.fn().mockImplementation(async (key: string, value: string, opts?: { nx?: boolean }) => {
+        if (opts?.nx && store.has(key)) return undefined;
+        store.set(key, value);
+        return "OK";
+      });
+      const createModInboxConversation = vi
+        .fn()
+        .mockResolvedValueOnce("conv_orig_comment")
+        .mockResolvedValueOnce("conv_new_post")
+        .mockResolvedValueOnce("conv_fallback_reply");
+      const reply = vi
+        .fn()
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(new Error("Conversation archived/locked"));
+      const archiveConversation = vi.fn().mockResolvedValue({});
+
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: true,
+            modmailNotification: false,
+            archiveModmail: true,
+            webhookURL: "",
+            excludeContext: false,
+            addModNote: false,
+          }),
+        },
+        redis: {
+          get: redisGet,
+          set: redisSet,
+        },
+        reddit: {
+          modMail: {
+            createModInboxConversation,
+            reply,
+            archiveConversation,
+          },
+        },
+      } as unknown as TriggerContext;
+
+      // 1. Admin removes comment -> creates Modmail and caches modmail:t1_thread1
+      await checkModAction(
+        {
+          id: "ModAction_thread_rem1",
+          action: "removecomment",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_thread1", body: "Original comment" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+      expect(store.get("modmail:t1_thread1")).toBe("conv_orig_comment");
+
+      // 2. Admin approves same comment -> replies to conv_orig_comment with isInternal: true and re-archives
+      await checkModAction(
+        {
+          id: "ModAction_thread_app1",
+          action: "approvecomment",
+          moderator: { name: "Reddit Legal" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_thread1", body: "Original comment" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1); // Did NOT create a new thread
+      expect(reply).toHaveBeenCalledTimes(1);
+      expect(reply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversationId: "conv_orig_comment",
+          isInternal: true,
+          body: expect.stringContaining("**Reddit Legal** has performed an action in r/testsub"),
+        })
+      );
+      expect(archiveConversation).toHaveBeenCalledTimes(2);
+      expect(archiveConversation).toHaveBeenLastCalledWith("conv_orig_comment");
+
+      // 3. Admin locks a post (no cached conversation) -> creates new conversation and caches modmail:t3_nocache,
+      //    then Admin removes the same post -> threads onto conv_new_post
+      await checkModAction(
+        {
+          id: "ModAction_thread_lock_post",
+          action: "lock",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_nocache", title: "Post" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(2);
+      expect(store.get("modmail:t3_nocache")).toBe("conv_new_post");
+
+      await checkModAction(
+        {
+          id: "ModAction_thread_rem_post",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_nocache", title: "Post" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(2);
+      expect(reply).toHaveBeenCalledTimes(2);
+      expect(reply).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          conversationId: "conv_new_post",
+          isInternal: true,
+          body: expect.stringContaining("* **Action:** `removelink`"),
+        })
+      );
+
+      // 4. Follow-up action where reply throws -> warns and falls back to createModInboxConversation
+      await checkModAction(
+        {
+          id: "ModAction_thread_app_fail",
+          action: "approvecomment",
+          moderator: { name: "Reddit Legal" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_thread1", body: "Original comment" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(reply).toHaveBeenCalledTimes(3);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[notify] Error replying to modmail conversation conv_orig_comment; creating new conversation",
+        expect.any(Error)
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(3);
+      expect(store.get("modmail:t1_thread1")).toBe("conv_fallback_reply");
+
+      // 5. Redis errors when caching or fetching modmail conversation ID are handled gracefully
+      const errRedisContext = {
+        ...mockContext,
+        redis: {
+          get: vi.fn().mockImplementation(async (key: string) => {
+            if (key === "mods") return "localmod";
+            if (key === "modmail:t1_rediserr") throw new Error("Redis get failed");
+            return undefined;
+          }),
+          set: vi.fn().mockImplementation(async (key: string) => {
+            if (key === "modmail:t1_rediserr") throw new Error("Redis set failed");
+            return "OK";
+          }),
+        },
+        reddit: {
+          modMail: {
+            createModInboxConversation: vi.fn().mockResolvedValue("conv_rediserr"),
+            reply: vi.fn(),
+            archiveConversation: vi.fn().mockResolvedValue({}),
+          },
+        },
+      } as unknown as TriggerContext;
+
+      await checkModAction(
+        {
+          id: "ModAction_modmail_set_err",
+          action: "removecomment",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_rediserr", body: "Test" },
+        } as unknown as ModAction,
+        errRedisContext
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[cache] Error writing modmail:t1_rediserr to Redis",
+        expect.any(Error)
+      );
+
+      await checkModAction(
+        {
+          id: "ModAction_modmail_get_err",
+          action: "approvecomment",
+          moderator: { name: "Reddit Legal" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_rediserr", body: "Test" },
+        } as unknown as ModAction,
+        errRedisContext
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[cache] Error fetching cached modmail conversation for t1_rediserr",
+        expect.any(Error)
+      );
+
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
   });
 
   describe("isRemovedByReddit and isRedactedContent", () => {
