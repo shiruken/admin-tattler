@@ -67,6 +67,13 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     return;
   }
 
+  // Ignore actions performed by this app itself (e.g. addnote)
+  const appSlugLower = (context.appSlug || "admin-tattler").toLowerCase();
+  if (modLower === appSlugLower) {
+    logger.action.debug(`Ignored ${action} by app account u/${moderatorName}`);
+    return;
+  }
+
   // Ignore user removing themselves as moderator
   if (action == "removemoderator" && modLower === event.targetUser?.name?.toLowerCase()) {
     logger.action.debug(`Ignored removemoderator by ${moderatorName} on self`);

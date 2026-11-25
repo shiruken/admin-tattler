@@ -3204,6 +3204,43 @@ describe("handlers", () => {
       expect(redisGet).not.toHaveBeenCalledWith("modaction:t3_post_ts");
       expect(addModNote).toHaveBeenCalledTimes(1);
     });
+
+    it("ignores actions performed by the app account without fetching modlist or settings", async () => {
+      const redisGet = vi.fn();
+      const getAllSettings = vi.fn();
+      const createModInboxConversation = vi.fn();
+
+      const baseAppContext = {
+        appVersion: "0.9.1.1",
+        settings: { getAll: getAllSettings },
+        redis: { get: redisGet, set: vi.fn() },
+        reddit: { modMail: { createModInboxConversation } },
+      } as unknown as TriggerContext;
+
+      // Default appSlug fallback ("admin-tattler"), even during playtest in admin_tattler_dev
+      await checkModAction(
+        {
+          action: "addnote",
+          moderator: { name: "Admin-Tattler" },
+          subreddit: { id: "t5_dev", name: "admin_tattler_dev" },
+        } as unknown as ModAction,
+        baseAppContext
+      );
+
+      // Explicit context.appSlug match
+      await checkModAction(
+        {
+          action: "addnote",
+          moderator: { name: "custom-tattler" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+        } as unknown as ModAction,
+        { ...baseAppContext, appSlug: "custom-tattler" } as unknown as TriggerContext
+      );
+
+      expect(redisGet).not.toHaveBeenCalled();
+      expect(getAllSettings).not.toHaveBeenCalled();
+      expect(createModInboxConversation).not.toHaveBeenCalled();
+    });
   });
 
   describe("formatPriorModAction", () => {
