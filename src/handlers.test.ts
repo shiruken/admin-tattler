@@ -448,7 +448,7 @@ describe("handlers", () => {
           }),
         },
         redis: {
-          get: vi.fn().mockResolvedValue("existing_mod"),
+          get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "existing_mod" : undefined)),
         },
         reddit: {
           getCurrentSubreddit: vi.fn().mockRejectedValue(new Error("Rate limit")),
@@ -637,7 +637,7 @@ describe("handlers", () => {
           getAll: vi.fn().mockResolvedValue(baseSettings),
         },
         redis: {
-          get: vi.fn().mockResolvedValue("localmod"),
+          get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
           set: vi.fn().mockResolvedValue("OK"),
           expire: vi.fn().mockResolvedValue(1),
         },
@@ -667,7 +667,7 @@ describe("handlers", () => {
           getAll: vi.fn().mockResolvedValue(baseSettings),
         },
         redis: {
-          get: vi.fn().mockResolvedValue("localmod"),
+          get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
           set: vi.fn().mockResolvedValue("OK"),
           expire: vi.fn().mockResolvedValue(1),
         },
@@ -728,7 +728,7 @@ describe("handlers", () => {
           getAll: vi.fn().mockResolvedValue(baseSettings),
         },
         redis: {
-          get: vi.fn().mockResolvedValue("localmod"),
+          get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
           set: vi.fn().mockResolvedValue("OK"),
           expire: vi.fn().mockResolvedValue(1),
         },
@@ -975,7 +975,7 @@ describe("handlers", () => {
           }),
         },
         redis: {
-          get: vi.fn().mockResolvedValue("localmod"),
+          get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
           set: vi.fn().mockResolvedValue("OK"),
           expire: vi.fn().mockResolvedValue(1),
         },
@@ -1134,7 +1134,7 @@ describe("handlers", () => {
           }),
         },
         redis: {
-          get: vi.fn().mockResolvedValue("localmod"),
+          get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
           set: vi.fn().mockResolvedValue("OK"),
           expire: vi.fn().mockResolvedValue(1),
         },
@@ -2142,7 +2142,7 @@ describe("handlers", () => {
           getAll: vi.fn().mockResolvedValue(baseSettings),
         },
         redis: {
-          get: vi.fn().mockResolvedValue("localmod"),
+          get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
           set: vi.fn().mockResolvedValue("OK"),
         },
         reddit: {
@@ -2187,7 +2187,7 @@ describe("handlers", () => {
           getAll: vi.fn().mockResolvedValue(baseSettings),
         },
         redis: {
-          get: vi.fn().mockResolvedValue("localmod"),
+          get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
           set: vi.fn().mockResolvedValue("OK"),
         },
         reddit: {
@@ -2229,7 +2229,7 @@ describe("handlers", () => {
           getAll: vi.fn().mockResolvedValue(baseSettings),
         },
         redis: {
-          get: vi.fn().mockResolvedValue("localmod"),
+          get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
           set: vi.fn().mockResolvedValue("OK"),
         },
         reddit: {
@@ -2272,7 +2272,7 @@ describe("handlers", () => {
           getAll: vi.fn().mockResolvedValue(baseSettings),
         },
         redis: {
-          get: vi.fn().mockResolvedValue("localmod"),
+          get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
           set: vi.fn().mockResolvedValue("OK"),
         },
         reddit: {
@@ -2309,7 +2309,7 @@ describe("handlers", () => {
           getAll: vi.fn().mockResolvedValue(baseSettings),
         },
         redis: {
-          get: vi.fn().mockResolvedValue("localmod"),
+          get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
           set: vi.fn().mockResolvedValue("OK"),
         },
         reddit: {
@@ -2360,7 +2360,7 @@ describe("handlers", () => {
           getAll: vi.fn().mockResolvedValue(baseSettings),
         },
         redis: {
-          get: vi.fn().mockResolvedValue("localmod"),
+          get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
           set: vi.fn().mockResolvedValue("OK"),
         },
         reddit: {
@@ -2694,7 +2694,7 @@ describe("handlers", () => {
             }),
           },
           redis: {
-            get: vi.fn().mockResolvedValue("localmod"),
+            get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
             set: vi.fn().mockResolvedValue("OK"),
           },
           reddit: {
@@ -2766,7 +2766,7 @@ describe("handlers", () => {
           }),
         },
         redis: {
-          get: vi.fn().mockResolvedValue("localmod"),
+          get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
           set: vi.fn().mockResolvedValue("OK"),
         },
         reddit: {
@@ -3080,6 +3080,7 @@ describe("handlers", () => {
         return "OK";
       });
       const createModInboxConversation = vi.fn().mockResolvedValue("conv_ts");
+      const reply = vi.fn().mockResolvedValue({});
       const addModNote = vi.fn().mockResolvedValue({});
 
       const mockContext = {
@@ -3100,6 +3101,7 @@ describe("handlers", () => {
         reddit: {
           modMail: {
             createModInboxConversation,
+            reply,
           },
           addModNote,
         },
@@ -3153,7 +3155,7 @@ describe("handlers", () => {
       );
       expect(createModInboxConversation.mock.calls[0][0].bodyMarkdown).not.toContain("Previously");
 
-      // 4. Admin action that happened LATER than the cached mod action DOES include "Previously ..."
+      // 4. Admin action that happened LATER than the cached mod action DOES include "Previously ..." (threaded reply)
       await checkModAction(
         {
           id: "ModAction_later_admin",
@@ -3165,8 +3167,9 @@ describe("handlers", () => {
         } as unknown as ModAction,
         mockContext
       );
-      expect(createModInboxConversation).toHaveBeenCalledTimes(2);
-      expect(createModInboxConversation.mock.calls[1][0].bodyMarkdown).toContain(
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+      expect(reply).toHaveBeenCalledTimes(1);
+      expect(reply.mock.calls[0][0].body).toContain(
         "* **Action:** `removelink` (Previously removed by u/localmod)"
       );
 
@@ -3479,6 +3482,52 @@ describe("handlers", () => {
         expect.any(Error)
       );
 
+      // 3. Admin approvecomment on AutoModerator or when addModNote is disabled -> skips getModNotes
+      getModNotes.mockClear();
+      await checkModAction(
+        {
+          id: "ModAction_approve_automod",
+          action: "approvecomment",
+          moderator: { name: "Reddit Legal" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_automod_note", body: "AutoMod comment" },
+          targetUser: { name: "AutoModerator" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(getModNotes).not.toHaveBeenCalled();
+
+      const notesDisabledContext = {
+        ...mockContext,
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: true,
+            modmailNotification: false,
+            archiveModmail: false,
+            webhookURL: "",
+            excludeContext: false,
+            addModNote: false,
+          }),
+        },
+        reddit: {
+          ...mockContext.reddit,
+          modMail: { createModInboxConversation: vi.fn().mockResolvedValue("conv_no_notes") },
+        },
+      } as unknown as TriggerContext;
+
+      await checkModAction(
+        {
+          id: "ModAction_approve_notes_off",
+          action: "approvecomment",
+          moderator: { name: "Reddit Legal" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_notes_off", body: "Restored comment" },
+          targetUser: { name: "appealed_user" },
+        } as unknown as ModAction,
+        notesDisabledContext
+      );
+      expect(getModNotes).not.toHaveBeenCalled();
+
       warnSpy.mockRestore();
       errorSpy.mockRestore();
     });
@@ -3542,11 +3591,14 @@ describe("handlers", () => {
       );
       expect(createModInboxConversation).toHaveBeenCalledTimes(1);
       expect(createModInboxConversation.mock.calls[0][0].bodyMarkdown).toContain(
-        "Notification generated by [Admin Tattler]"
+        "\n\n*Notification generated by [Admin Tattler](https://developers.reddit.com/apps/admin-tattler). " +
+          "Configure settings [here](https://developers.reddit.com/r/testsub/apps/admin-tattler).*"
       );
+      expect(createModInboxConversation.mock.calls[0][0].bodyMarkdown).not.toContain("---");
       expect(store.get("modmail:t1_thread1")).toBe("conv_orig_comment");
 
-      // 2. Admin approves same comment -> replies to conv_orig_comment with isInternal: true (without footer) and re-archives
+      // 2. Admin approves same comment -> replies to conv_orig_comment with isInternal: true (without footer), refreshes TTL, and re-archives
+      redisSet.mockClear();
       await checkModAction(
         {
           id: "ModAction_thread_app1",
@@ -3567,6 +3619,11 @@ describe("handlers", () => {
         })
       );
       expect(reply.mock.calls[0][0].body).not.toContain("Notification generated by [Admin Tattler]");
+      expect(redisSet).toHaveBeenCalledWith(
+        "modmail:t1_thread1",
+        "conv_orig_comment",
+        expect.objectContaining({ expiration: expect.any(Date) })
+      );
       expect(archiveConversation).toHaveBeenCalledTimes(2);
       expect(archiveConversation).toHaveBeenLastCalledWith("conv_orig_comment");
 
@@ -3622,7 +3679,37 @@ describe("handlers", () => {
         expect.any(Error)
       );
       expect(createModInboxConversation).toHaveBeenCalledTimes(3);
+      expect(createModInboxConversation.mock.calls[2][0].bodyMarkdown).toContain(
+        "*Notification generated by [Admin Tattler](https://developers.reddit.com/apps/admin-tattler)."
+      );
       expect(store.get("modmail:t1_thread1")).toBe("conv_fallback_reply");
+
+      // 4b. User-only Admin action (no targetPost/targetComment) -> creates new conversation with footer and does not touch modmail:* cache
+      createModInboxConversation.mockResolvedValueOnce("conv_user_only");
+      redisGet.mockClear();
+      redisSet.mockClear();
+      await checkModAction(
+        {
+          id: "ModAction_thread_user_only",
+          action: "banuser",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetUser: { id: "t2_banned", name: "banned_user" },
+        } as unknown as ModAction,
+        {
+          ...mockContext,
+          reddit: {
+            ...mockContext.reddit,
+            getBannedUsers: vi.fn().mockResolvedValue({ all: vi.fn().mockResolvedValue([]) }),
+          },
+        } as unknown as TriggerContext
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(4);
+      expect(createModInboxConversation.mock.calls[3][0].bodyMarkdown).toContain(
+        "*Notification generated by [Admin Tattler](https://developers.reddit.com/apps/admin-tattler)."
+      );
+      expect(redisGet.mock.calls.some(([key]) => String(key).startsWith("modmail:"))).toBe(false);
+      expect(redisSet.mock.calls.some(([key]) => String(key).startsWith("modmail:"))).toBe(false);
 
       // 5. Redis errors when caching or fetching modmail conversation ID are handled gracefully
       const errRedisContext = {
