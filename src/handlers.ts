@@ -11,6 +11,8 @@ const RETRY_DELAY_MS = 1000; // 1 second
 const DEDUP_CACHE_TTL_SECONDS = 60*60*24; // 24 hours (1 day)
 const COMMENT_MOD_ACTIONS = new Set(["removecomment", "spamcomment", "approvecomment"]);
 const POST_MOD_ACTIONS = new Set(["removelink", "spamlink", "approvelink"]);
+const REMOVED_BY_REDDIT_REGEX = /^\[\s*removed by reddit\s*\]$/i;
+const REDACTED_CONTENT_REGEX = /^\[\s*(?:deleted|removed)\s*\]$/i;
 
 /**
  * Checks ModAction for Admins
@@ -192,7 +194,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         title = targetPost.title;
       }
 
-      if (title == "[ Removed by Reddit ]" || body == "[ Removed by Reddit ]") {
+      if (isRemovedByReddit(title) || isRemovedByReddit(body)) {
         let cachedPost = await getCachedPost(targetPost.id, context);
         if (!cachedPost && createdAt && Math.abs(Date.now() - createdAt) < RECENT_SUBMISSION_RETRY_WINDOW_MS) {
           logger.cache.debug(`Post ${targetPost.id} was recently created; retrying cache lookup in 1s`);
@@ -200,7 +202,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
           cachedPost = await getCachedPost(targetPost.id, context);
         }
         if (cachedPost) {
-          if (title == "[ Removed by Reddit ]" && cachedPost.title) {
+          if (isRemovedByReddit(title) && cachedPost.title && !isRedactedContent(cachedPost.title)) {
             title = cachedPost.title;
             usedCachedTitle = true;
           }
@@ -208,16 +210,16 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
             url = cachedPost.url;
             usedCachedURL = true;
           }
-          if ((body == "[ Removed by Reddit ]" || !body) && cachedPost.body) {
+          if ((isRemovedByReddit(body) || !body) && cachedPost.body && !isRedactedContent(cachedPost.body)) {
             body = cachedPost.body;
             usedCachedBody = true;
           }
         }
       }
 
-      if (title == "[ Removed by Reddit ]") {
+      if (isRemovedByReddit(title)) {
         title = formatRemovedFallback(createdAt);
-      } else if (body == "[ Removed by Reddit ]") {
+      } else if (isRemovedByReddit(body)) {
         body = formatRemovedFallback(createdAt);
       }
     }
@@ -232,14 +234,14 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       createdAt = targetComment.createdAt;
       if (targetComment.body) {
         body = targetComment.body;
-        if (body == "[ Removed by Reddit ]") {
+        if (isRemovedByReddit(body)) {
           let cachedComment = await getCachedComment(targetComment.id, context);
           if (!cachedComment && createdAt && Math.abs(Date.now() - createdAt) < RECENT_SUBMISSION_RETRY_WINDOW_MS) {
             logger.cache.debug(`Comment ${targetComment.id} was recently created; retrying cache lookup in 1s`);
             await sleep(RETRY_DELAY_MS);
             cachedComment = await getCachedComment(targetComment.id, context);
           }
-          if (cachedComment) {
+          if (cachedComment && !isRedactedContent(cachedComment)) {
             body = cachedComment;
             usedCachedBody = true;
           } else {
@@ -313,7 +315,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
       if (!settings.excludeContext && body) {
         const bodyLabel = `${targetComment?.id ? "Comment" : "Body"}${ usedCachedBody ? " (Cached)" : "" }`;
-        if (body.startsWith("[ Removed by Reddit ]") || body === "[deleted]" || body === "[removed]") {
+        if (body.startsWith("[ Removed by Reddit ]") || isRedactedContent(body)) {
           msg += `\n* **${bodyLabel}:** ${body}`;
         } else {
           msg += `\n* **${bodyLabel}:**\n${quoteText(body.slice(0, 9000))}`;
@@ -526,19 +528,15 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
  * @param event A PostSubmit or PostUpdate object
  * @param context A TriggerContext object
  */
-export async function cachePost(event: PostSubmit | PostUpdate, context: TriggerContext) {
+export async function cachePost(
+  event: (PostSubmit | PostUpdate) & { type?: "PostSubmit" | "PostUpdate" },
+  context: TriggerContext
+) {
   const post = event.post;
   if (post && post.title) {
-    if (
-      post.deleted ||
-      post.title === "[ Removed by Reddit ]" ||
-      post.title === "[deleted]" ||
-      post.title === "[removed]" ||
-      post.selftext === "[ Removed by Reddit ]" ||
-      post.selftext === "[deleted]" ||
-      post.selftext === "[removed]"
-    ) {
-      logger.cache.debug(`Skipped caching ${post.id}: content is redacted or deleted`);
+    const eventType = event.type ?? ("previousBody" in event ? "PostUpdate" : "PostSubmit");
+    if (post.deleted || isRedactedContent(post.title) || isRedactedContent(post.selftext)) {
+      logger.cache.debug(`[${eventType}] Skipped caching ${post.id}: content is redacted or deleted`);
       return;
     }
 
@@ -551,8 +549,8 @@ export async function cachePost(event: PostSubmit | PostUpdate, context: Trigger
       .set(post.id, JSON.stringify(data), {
         expiration: new Date(Date.now() + CACHE_DURATION * 1000),
       })
-      .then(() => logger.cache.debug(`Wrote ${post.id} to Redis`))
-      .catch((e) => logger.cache.error(`Error writing ${post.id} to Redis`, e));
+      .then(() => logger.cache.debug(`[${eventType}] Wrote ${post.id} to Redis`))
+      .catch((e) => logger.cache.error(`[${eventType}] Error writing ${post.id} to Redis`, e));
   }
 }
 
@@ -589,16 +587,15 @@ async function getCachedPost(post_id: string, context: TriggerContext): Promise<
  * @param event A CommentSubmit or CommentUpdate object
  * @param context A TriggerContext object
  */
-export async function cacheComment(event: CommentSubmit | CommentUpdate, context: TriggerContext) {
+export async function cacheComment(
+  event: (CommentSubmit | CommentUpdate) & { type?: "CommentSubmit" | "CommentUpdate" },
+  context: TriggerContext
+) {
   const comment = event.comment;
   if (comment && comment.body) {
-    if (
-      comment.deleted ||
-      comment.body === "[ Removed by Reddit ]" ||
-      comment.body === "[deleted]" ||
-      comment.body === "[removed]"
-    ) {
-      logger.cache.debug(`Skipped caching ${comment.id}: content is redacted or deleted`);
+    const eventType = event.type ?? ("previousBody" in event ? "CommentUpdate" : "CommentSubmit");
+    if (comment.deleted || isRedactedContent(comment.body)) {
+      logger.cache.debug(`[${eventType}] Skipped caching ${comment.id}: content is redacted or deleted`);
       return;
     }
 
@@ -606,8 +603,8 @@ export async function cacheComment(event: CommentSubmit | CommentUpdate, context
       .set(comment.id, comment.body, {
         expiration: new Date(Date.now() + CACHE_DURATION * 1000),
       })
-      .then(() => logger.cache.debug(`Wrote ${comment.id} to Redis`))
-      .catch((e) => logger.cache.error(`Error writing ${comment.id} to Redis`, e));
+      .then(() => logger.cache.debug(`[${eventType}] Wrote ${comment.id} to Redis`))
+      .catch((e) => logger.cache.error(`[${eventType}] Error writing ${comment.id} to Redis`, e));
   }
 }
 
@@ -866,6 +863,28 @@ export function formatPriorModAction(priorAction: CachedModAction): string {
     default:
       return `Previously actioned (${priorAction.action}) by ${actor}`;
   }
+}
+
+/**
+ * Check whether text is a Reddit Admin removal placeholder (with or without inner whitespace)
+ * @param text Optional text string
+ * @returns True if text matches a Reddit removal placeholder
+ */
+export function isRemovedByReddit(text?: string): boolean {
+  return Boolean(text && REMOVED_BY_REDDIT_REGEX.test(text.trim()));
+}
+
+/**
+ * Check whether text is a redacted, removed, or deleted placeholder
+ * @param text Optional text string
+ * @returns True if text matches any redacted/deleted/removed placeholder
+ */
+export function isRedactedContent(text?: string): boolean {
+  if (!text) {
+    return false;
+  }
+  const trimmed = text.trim();
+  return REMOVED_BY_REDDIT_REGEX.test(trimmed) || REDACTED_CONTENT_REGEX.test(trimmed);
 }
 
 /**

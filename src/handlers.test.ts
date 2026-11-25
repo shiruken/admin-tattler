@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { cacheComment, cacheModerators, cachePost, checkModAction, formatPriorModAction, formatRemovedFallback } from "./handlers.js";
+import { cacheComment, cacheModerators, cachePost, checkModAction, formatPriorModAction, formatRemovedFallback, isRedactedContent, isRemovedByReddit } from "./handlers.js";
 import type { TriggerContext } from "@devvit/public-api";
 import type { CommentSubmit, ModAction, PostSubmit } from "@devvit/protos";
 
@@ -90,13 +90,13 @@ describe("handlers", () => {
       );
 
       expect(redisSet).not.toHaveBeenCalled();
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t3_p1: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t3_p2: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t3_p3: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t3_p4: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t3_p5: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t3_p6: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t3_p7: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] [PostSubmit] Skipped caching t3_p1: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] [PostSubmit] Skipped caching t3_p2: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] [PostSubmit] Skipped caching t3_p3: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] [PostSubmit] Skipped caching t3_p4: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] [PostSubmit] Skipped caching t3_p5: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] [PostSubmit] Skipped caching t3_p6: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] [PostSubmit] Skipped caching t3_p7: content is redacted or deleted");
       consoleDebug.mockRestore();
     });
 
@@ -116,7 +116,7 @@ describe("handlers", () => {
       } as unknown as PostSubmit;
 
       await cachePost(event, mockContext);
-      expect(consoleError).toHaveBeenCalledWith("[cache] Error writing t3_err1 to Redis", expect.any(Error));
+      expect(consoleError).toHaveBeenCalledWith("[cache] [PostSubmit] Error writing t3_err1 to Redis", expect.any(Error));
       consoleError.mockRestore();
     });
   });
@@ -180,10 +180,10 @@ describe("handlers", () => {
       );
 
       expect(redisSet).not.toHaveBeenCalled();
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t1_c1: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t1_c2: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t1_c3: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] Skipped caching t1_c4: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] [CommentSubmit] Skipped caching t1_c1: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] [CommentSubmit] Skipped caching t1_c2: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] [CommentSubmit] Skipped caching t1_c3: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[cache] [CommentSubmit] Skipped caching t1_c4: content is redacted or deleted");
       consoleDebug.mockRestore();
     });
 
@@ -203,7 +203,7 @@ describe("handlers", () => {
       } as unknown as CommentSubmit;
 
       await cacheComment(event, mockContext);
-      expect(consoleError).toHaveBeenCalledWith("[cache] Error writing t1_errcomm to Redis", expect.any(Error));
+      expect(consoleError).toHaveBeenCalledWith("[cache] [CommentSubmit] Error writing t1_errcomm to Redis", expect.any(Error));
       consoleError.mockRestore();
     });
   });
@@ -3240,6 +3240,130 @@ describe("handlers", () => {
       expect(redisGet).not.toHaveBeenCalled();
       expect(getAllSettings).not.toHaveBeenCalled();
       expect(createModInboxConversation).not.toHaveBeenCalled();
+    });
+
+    it("skips caching [Removed by Reddit] without inner spaces and ignores redacted cached values on read", async () => {
+      const redisSet = vi.fn().mockResolvedValue("OK");
+      const mockCacheContext = {
+        redis: { set: redisSet },
+      } as unknown as TriggerContext;
+
+      // CommentUpdate / PostUpdate with "[Removed by Reddit]" (no spaces) must NOT overwrite Redis,
+      // and logs event type + previousBody metadata without raw text
+      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      await cacheComment(
+        {
+          type: "CommentUpdate",
+          comment: { id: "t1_nospaces", body: "[Removed by Reddit]", deleted: false },
+          previousBody: "Original comment text",
+        } as unknown as CommentSubmit,
+        mockCacheContext
+      );
+      await cacheComment(
+        {
+          comment: { id: "t1_nospaces_empty", body: "[Removed by Reddit]", deleted: false },
+          previousBody: "",
+        } as unknown as CommentSubmit,
+        mockCacheContext
+      );
+      await cachePost(
+        {
+          post: { id: "t3_nospaces", title: "[Removed by Reddit]", selftext: "", url: "", deleted: false },
+          previousBody: "[deleted]",
+        } as unknown as PostSubmit,
+        mockCacheContext
+      );
+      await cachePost(
+        { post: { id: "t3_nospaces_body", title: "Valid title", selftext: "[Removed by Reddit]", url: "", deleted: false } } as unknown as PostSubmit,
+        mockCacheContext
+      );
+      expect(redisSet).not.toHaveBeenCalled();
+      expect(debugSpy).toHaveBeenCalledWith(
+        "[cache] [CommentUpdate] Skipped caching t1_nospaces: content is redacted or deleted"
+      );
+      expect(debugSpy).toHaveBeenCalledWith(
+        "[cache] [CommentUpdate] Skipped caching t1_nospaces_empty: content is redacted or deleted"
+      );
+      expect(debugSpy).toHaveBeenCalledWith(
+        "[cache] [PostUpdate] Skipped caching t3_nospaces: content is redacted or deleted"
+      );
+      debugSpy.mockRestore();
+
+      // Reading a polluted "[Removed by Reddit]" cached comment falls back cleanly instead of showing "(Cached)"
+      const createModInboxConversation = vi.fn().mockResolvedValue("conv_polluted");
+      const pollutedContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: true,
+            modmailNotification: false,
+            archiveModmail: false,
+            webhookURL: "",
+            excludeContext: false,
+            addModNote: false,
+          }),
+        },
+        redis: {
+          get: vi.fn().mockImplementation(async (key: string) => {
+            if (key === "mods") return "localmod";
+            if (key === "t1_polluted") return "[Removed by Reddit]";
+            if (key === "t3_polluted") return JSON.stringify({ title: "[Removed by Reddit]", body: "[deleted]", url: "" });
+            return undefined;
+          }),
+          set: vi.fn().mockResolvedValue("OK"),
+        },
+        reddit: {
+          modMail: { createModInboxConversation },
+        },
+      } as unknown as TriggerContext;
+
+      await checkModAction(
+        {
+          id: "ModAction_polluted_comment",
+          action: "removecomment",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_polluted", body: "[Removed by Reddit]" },
+        } as unknown as ModAction,
+        pollutedContext
+      );
+      expect(createModInboxConversation.mock.calls[0][0].bodyMarkdown).toContain(
+        "* **Comment:** [ Removed by Reddit ] (Not cached)"
+      );
+      expect(createModInboxConversation.mock.calls[0][0].bodyMarkdown).not.toContain("(Cached)");
+
+      await checkModAction(
+        {
+          id: "ModAction_polluted_post",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_polluted", title: "[Removed by Reddit]", selftext: "[Removed by Reddit]" },
+        } as unknown as ModAction,
+        pollutedContext
+      );
+      expect(createModInboxConversation.mock.calls[1][0].bodyMarkdown).toContain(
+        "* **Title:** [ Removed by Reddit ] (Not cached)"
+      );
+      expect(createModInboxConversation.mock.calls[1][0].bodyMarkdown).not.toContain("(Cached)");
+    });
+  });
+
+  describe("isRemovedByReddit and isRedactedContent", () => {
+    it("matches Reddit removal and redacted placeholders regardless of inner spacing or casing", () => {
+      expect(isRemovedByReddit("[ Removed by Reddit ]")).toBe(true);
+      expect(isRemovedByReddit("[Removed by Reddit]")).toBe(true);
+      expect(isRemovedByReddit(" [removed by reddit] ")).toBe(true);
+      expect(isRemovedByReddit("[deleted]")).toBe(false);
+      expect(isRemovedByReddit("I got [Removed by Reddit] yesterday")).toBe(false);
+      expect(isRemovedByReddit(undefined)).toBe(false);
+
+      expect(isRedactedContent("[Removed by Reddit]")).toBe(true);
+      expect(isRedactedContent("[ Removed by Reddit ]")).toBe(true);
+      expect(isRedactedContent("[deleted]")).toBe(true);
+      expect(isRedactedContent("[ removed ]")).toBe(true);
+      expect(isRedactedContent("Normal comment text")).toBe(false);
+      expect(isRedactedContent("")).toBe(false);
+      expect(isRedactedContent(undefined)).toBe(false);
     });
   });
 
