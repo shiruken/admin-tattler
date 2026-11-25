@@ -47,6 +47,8 @@ Mod Notes can (optionally) be added to users whose content was removed by the Re
 
 ## Recent Updates (v0.9)
 
+* Thread follow-up Admin actions on the same post or comment into a single Modmail conversation *(New in v0.9.2)*
+* Automatically delete app-created Mod Notes if Admins later approve the content *(New in v0.9.2)*
 * Flag when actioned content was previously removed or approved by moderators
 * Support multiple comma-separated Slack and Discord webhooks
 * Option to route Modmail notifications to the Notifications folder
