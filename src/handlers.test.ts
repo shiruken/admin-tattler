@@ -3279,13 +3279,13 @@ describe("handlers", () => {
       );
       expect(redisSet).not.toHaveBeenCalled();
       expect(debugSpy).toHaveBeenCalledWith(
-        "[cache] [CommentUpdate] Skipped caching t1_nospaces: content is redacted or deleted"
+        "[cache] [CommentUpdate] Skipped caching t1_nospaces: content is redacted or deleted (previousBody: 21 chars)"
       );
       expect(debugSpy).toHaveBeenCalledWith(
-        "[cache] [CommentUpdate] Skipped caching t1_nospaces_empty: content is redacted or deleted"
+        "[cache] [CommentUpdate] Skipped caching t1_nospaces_empty: content is redacted or deleted (previousBody: empty)"
       );
       expect(debugSpy).toHaveBeenCalledWith(
-        "[cache] [PostUpdate] Skipped caching t3_nospaces: content is redacted or deleted"
+        "[cache] [PostUpdate] Skipped caching t3_nospaces: content is redacted or deleted (previousBody: redacted)"
       );
       debugSpy.mockRestore();
 

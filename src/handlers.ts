@@ -536,7 +536,8 @@ export async function cachePost(
   if (post && post.title) {
     const eventType = event.type ?? ("previousBody" in event ? "PostUpdate" : "PostSubmit");
     if (post.deleted || isRedactedContent(post.title) || isRedactedContent(post.selftext)) {
-      logger.cache.debug(`[${eventType}] Skipped caching ${post.id}: content is redacted or deleted`);
+      const prevInfo = formatPreviousBodyDebug(event);
+      logger.cache.debug(`[${eventType}] Skipped caching ${post.id}: content is redacted or deleted${prevInfo}`);
       return;
     }
 
@@ -595,7 +596,8 @@ export async function cacheComment(
   if (comment && comment.body) {
     const eventType = event.type ?? ("previousBody" in event ? "CommentUpdate" : "CommentSubmit");
     if (comment.deleted || isRedactedContent(comment.body)) {
-      logger.cache.debug(`[${eventType}] Skipped caching ${comment.id}: content is redacted or deleted`);
+      const prevInfo = formatPreviousBodyDebug(event);
+      logger.cache.debug(`[${eventType}] Skipped caching ${comment.id}: content is redacted or deleted${prevInfo}`);
       return;
     }
 
@@ -863,6 +865,25 @@ export function formatPriorModAction(priorAction: CachedModAction): string {
     default:
       return `Previously actioned (${priorAction.action}) by ${actor}`;
   }
+}
+
+/**
+ * Format exploratory previousBody metadata for Update events without logging raw user text
+ * @param event A Submit or Update trigger event
+ * @returns Debug suffix describing previousBody availability, or empty string
+ */
+function formatPreviousBodyDebug(event: PostSubmit | PostUpdate | CommentSubmit | CommentUpdate): string {
+  if (!("previousBody" in event)) {
+    return "";
+  }
+  const prev = event.previousBody;
+  if (!prev) {
+    return " (previousBody: empty)";
+  }
+  if (isRedactedContent(prev)) {
+    return " (previousBody: redacted)";
+  }
+  return ` (previousBody: ${prev.length} chars)`;
 }
 
 /**
