@@ -90,13 +90,13 @@ describe("handlers", () => {
       );
 
       expect(redisSet).not.toHaveBeenCalled();
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] [PostSubmit] Skipped caching t3_p1: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] [PostSubmit] Skipped caching t3_p2: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] [PostSubmit] Skipped caching t3_p3: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] [PostSubmit] Skipped caching t3_p4: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] [PostSubmit] Skipped caching t3_p5: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] [PostSubmit] Skipped caching t3_p6: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] [PostSubmit] Skipped caching t3_p7: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[debug] [cache] [PostSubmit] Skipped caching t3_p1: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[debug] [cache] [PostSubmit] Skipped caching t3_p2: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[debug] [cache] [PostSubmit] Skipped caching t3_p3: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[debug] [cache] [PostSubmit] Skipped caching t3_p4: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[debug] [cache] [PostSubmit] Skipped caching t3_p5: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[debug] [cache] [PostSubmit] Skipped caching t3_p6: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[debug] [cache] [PostSubmit] Skipped caching t3_p7: content is redacted or deleted");
       consoleDebug.mockRestore();
     });
 
@@ -180,10 +180,10 @@ describe("handlers", () => {
       );
 
       expect(redisSet).not.toHaveBeenCalled();
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] [CommentSubmit] Skipped caching t1_c1: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] [CommentSubmit] Skipped caching t1_c2: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] [CommentSubmit] Skipped caching t1_c3: content is redacted or deleted");
-      expect(consoleDebug).toHaveBeenCalledWith("[cache] [CommentSubmit] Skipped caching t1_c4: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[debug] [cache] [CommentSubmit] Skipped caching t1_c1: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[debug] [cache] [CommentSubmit] Skipped caching t1_c2: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[debug] [cache] [CommentSubmit] Skipped caching t1_c3: content is redacted or deleted");
+      expect(consoleDebug).toHaveBeenCalledWith("[debug] [cache] [CommentSubmit] Skipped caching t1_c4: content is redacted or deleted");
       consoleDebug.mockRestore();
     });
 
@@ -1773,7 +1773,7 @@ describe("handlers", () => {
         expect.objectContaining({ nx: true, expiration: expect.any(Date) })
       );
       expect(debugSpy).toHaveBeenCalledWith(
-        "[action] Stored deduplication key dedup:action:id:ModAction_unique123"
+        "[debug] [action] Stored deduplication key dedup:action:id:ModAction_unique123"
       );
 
       // Second run (duplicate trigger): should be ignored
@@ -1990,7 +1990,7 @@ describe("handlers", () => {
     });
 
     it("ignores admin actions cleanly when all reporting routes and mod notes are disabled", async () => {
-      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
       const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
       const redisSet = vi.fn().mockResolvedValue("OK");
 
@@ -2026,12 +2026,12 @@ describe("handlers", () => {
 
       await checkModAction(event, mockContext);
 
-      expect(debugSpy).toHaveBeenCalledWith(
+      expect(logSpy).toHaveBeenCalledWith(
         "[action] Ignored removelink by Anti-Evil Operations: all reporting routes and mod notes are disabled"
       );
       expect(createModInboxConversation).not.toHaveBeenCalled();
       expect(redisSet).not.toHaveBeenCalled();
-      debugSpy.mockRestore();
+      logSpy.mockRestore();
     });
 
     it("adds mod note when addModNote is true even if all reporting routes are disabled", async () => {
@@ -2133,7 +2133,7 @@ describe("handlers", () => {
     });
 
     it("ignores unsticky action when targetComment.deleted is true in event payload", async () => {
-      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
       const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
       const getCommentById = vi.fn();
 
@@ -2167,14 +2167,14 @@ describe("handlers", () => {
 
       expect(getCommentById).not.toHaveBeenCalled();
       expect(createModInboxConversation).not.toHaveBeenCalled();
-      expect(debugSpy).toHaveBeenCalledWith(
+      expect(logSpy).toHaveBeenCalledWith(
         "[action] Ignored unsticky on deleted content (t1_deleted_sticky)"
       );
-      debugSpy.mockRestore();
+      logSpy.mockRestore();
     });
 
     it("ignores unsticky action when live getCommentById shows deleted comment despite intact event payload", async () => {
-      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
       const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
       const getCommentById = vi.fn().mockResolvedValue({
         authorName: "[deleted]",
@@ -2213,14 +2213,14 @@ describe("handlers", () => {
 
       expect(getCommentById).toHaveBeenCalledWith("t1_phwbv0n");
       expect(createModInboxConversation).not.toHaveBeenCalled();
-      expect(debugSpy).toHaveBeenCalledWith(
+      expect(logSpy).toHaveBeenCalledWith(
         "[action] Ignored unsticky on deleted content (t1_phwbv0n)"
       );
-      debugSpy.mockRestore();
+      logSpy.mockRestore();
     });
 
     it("ignores unsticky action when live getCommentById throws not found", async () => {
-      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
       const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
       const getCommentById = vi.fn().mockRejectedValue(new Error("not found"));
 
@@ -2253,10 +2253,10 @@ describe("handlers", () => {
       await checkModAction(event, mockContext);
 
       expect(createModInboxConversation).not.toHaveBeenCalled();
-      expect(debugSpy).toHaveBeenCalledWith(
+      expect(logSpy).toHaveBeenCalledWith(
         "[action] Ignored unsticky on deleted content (t1_gone)"
       );
-      debugSpy.mockRestore();
+      logSpy.mockRestore();
     });
 
     it("alerts on unsticky when live getCommentById confirms comment is still live", async () => {
@@ -2341,7 +2341,7 @@ describe("handlers", () => {
     });
 
     it("ignores unsticky action on deleted post via live getPostById and handles no post / API errors", async () => {
-      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       const createModInboxConversation = vi.fn().mockResolvedValue(undefined);
       const getPostById = vi
@@ -2381,7 +2381,7 @@ describe("handlers", () => {
         mockContext
       );
       expect(createModInboxConversation).not.toHaveBeenCalled();
-      expect(debugSpy).toHaveBeenCalledWith(
+      expect(logSpy).toHaveBeenCalledWith(
         "[action] Ignored unsticky on deleted content (t3_del_post)"
       );
 
@@ -2427,7 +2427,7 @@ describe("handlers", () => {
       );
       expect(createModInboxConversation).toHaveBeenCalledTimes(2);
 
-      debugSpy.mockRestore();
+      logSpy.mockRestore();
       errorSpy.mockRestore();
     });
 
@@ -2671,7 +2671,7 @@ describe("handlers", () => {
     });
 
     it("archives modmail conversation when archiveModmail is enabled and handles archive errors gracefully", async () => {
-      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       const createModInboxConversation = vi
         .fn()
@@ -2714,7 +2714,7 @@ describe("handlers", () => {
         makeContext(true)
       );
       expect(archiveConversation).toHaveBeenCalledWith("conv_123");
-      expect(debugSpy).toHaveBeenCalledWith("[notify] Archived modmail conversation conv_123");
+      expect(logSpy).toHaveBeenCalledWith("[notify] Archived modmail conversation conv_123");
 
       // 2. archiveModmail: true, archiveConversation throws -> logs error gracefully
       await checkModAction(
@@ -2746,7 +2746,7 @@ describe("handlers", () => {
       );
       expect(archiveConversation).toHaveBeenCalledTimes(2);
 
-      debugSpy.mockRestore();
+      logSpy.mockRestore();
       errorSpy.mockRestore();
     });
 
@@ -3279,13 +3279,13 @@ describe("handlers", () => {
       );
       expect(redisSet).not.toHaveBeenCalled();
       expect(debugSpy).toHaveBeenCalledWith(
-        "[cache] [CommentUpdate] Skipped caching t1_nospaces: content is redacted or deleted (previousBody: 21 chars)"
+        "[debug] [cache] [CommentUpdate] Skipped caching t1_nospaces: content is redacted or deleted (previousBody: 21 chars)"
       );
       expect(debugSpy).toHaveBeenCalledWith(
-        "[cache] [CommentUpdate] Skipped caching t1_nospaces_empty: content is redacted or deleted (previousBody: empty)"
+        "[debug] [cache] [CommentUpdate] Skipped caching t1_nospaces_empty: content is redacted or deleted (previousBody: empty)"
       );
       expect(debugSpy).toHaveBeenCalledWith(
-        "[cache] [PostUpdate] Skipped caching t3_nospaces: content is redacted or deleted (previousBody: redacted)"
+        "[debug] [cache] [PostUpdate] Skipped caching t3_nospaces: content is redacted or deleted (previousBody: redacted)"
       );
       debugSpy.mockRestore();
 

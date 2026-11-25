@@ -46,7 +46,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     action == "acceptmoderatorinvite" || action == "addmoderator" ||
     action == "removemoderator" || action == "reordermoderators"
   ) {
-    logger.modlist.debug(`Updating cached modlist on ${action} by ${moderatorName}`);
+    logger.modlist.info(`Updating cached modlist on ${action} by ${moderatorName}`);
     try {
       moderators = await cacheModerators(context);
       didLiveRefresh = true;
@@ -107,13 +107,13 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     moderatorName != "Reddit Legal" &&
     moderatorName != "[ Redacted ]"
   ) {
-    logger.action.debug(`u/${moderatorName} not found in cached modlist, performing live refresh to verify`);
+    logger.action.info(`u/${moderatorName} not found in cached modlist, performing live refresh to verify`);
     try {
       moderators = await cacheModerators(context);
       isMod = moderators.some((m) => m.toLowerCase() === modLower);
       if (isMod) {
         await cacheModAction(event, context);
-        logger.action.debug(`u/${moderatorName} confirmed as moderator after live refresh; skipping`);
+        logger.action.info(`u/${moderatorName} confirmed as moderator after live refresh; skipping`);
         return;
       }
     } catch (e) {
@@ -130,14 +130,14 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
   // If all reporting routes and mod notes are disabled, skip processing
   if (!settings.sendModmail && webhookURLs.length === 0 && !settings.addModNote) {
-    logger.action.debug(`Ignored ${action} by ${moderatorName}: all reporting routes and mod notes are disabled`);
+    logger.action.info(`Ignored ${action} by ${moderatorName}: all reporting routes and mod notes are disabled`);
     return;
   }
 
   // Ignore unsticky actions on content that has been deleted
   if (action === "unsticky" && await isUnstickyTargetDeleted(event, context)) {
     const targetId = event.targetComment?.id || event.targetPost?.id || "unknown";
-    logger.action.debug(`Ignored unsticky on deleted content (${targetId})`);
+    logger.action.info(`Ignored unsticky on deleted content (${targetId})`);
     return;
   }
 
@@ -197,7 +197,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       if (isRemovedByReddit(title) || isRemovedByReddit(body)) {
         let cachedPost = await getCachedPost(targetPost.id, context);
         if (!cachedPost && createdAt && Math.abs(Date.now() - createdAt) < RECENT_SUBMISSION_RETRY_WINDOW_MS) {
-          logger.cache.debug(`Post ${targetPost.id} was recently created; retrying cache lookup in 1s`);
+          logger.cache.info(`Post ${targetPost.id} was recently created; retrying cache lookup in 1s`);
           await sleep(RETRY_DELAY_MS);
           cachedPost = await getCachedPost(targetPost.id, context);
         }
@@ -237,7 +237,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         if (isRemovedByReddit(body)) {
           let cachedComment = await getCachedComment(targetComment.id, context);
           if (!cachedComment && createdAt && Math.abs(Date.now() - createdAt) < RECENT_SUBMISSION_RETRY_WINDOW_MS) {
-            logger.cache.debug(`Comment ${targetComment.id} was recently created; retrying cache lookup in 1s`);
+            logger.cache.info(`Comment ${targetComment.id} was recently created; retrying cache lookup in 1s`);
             await sleep(RETRY_DELAY_MS);
             cachedComment = await getCachedComment(targetComment.id, context);
           }
@@ -294,7 +294,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
           adminActionTime !== undefined &&
           priorModAction.timestamp > adminActionTime
         ) {
-          logger.cache.debug(`Ignored cached mod action for ${contentTargetId}: occurred after Admin action`);
+          logger.cache.info(`Ignored cached mod action for ${contentTargetId}: occurred after Admin action`);
         } else {
           priorModActionNote = ` (${formatPriorModAction(priorModAction)})`;
         }
@@ -347,7 +347,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       if (settings.archiveModmail && conversationId) {
         await context.reddit.modMail
           .archiveConversation(conversationId)
-          .then(() => logger.notify.debug(`Archived modmail conversation ${conversationId}`))
+          .then(() => logger.notify.info(`Archived modmail conversation ${conversationId}`))
           .catch((e) => logger.notify.error(`Error archiving modmail conversation ${conversationId}`, e));
       }
     }
@@ -573,12 +573,12 @@ async function getCachedPost(post_id: string, context: TriggerContext): Promise<
   if (value) {
     try {
       cachedPost = JSON.parse(value);
-      logger.cache.debug(`Retrieved cached post data for ${post_id}`);
+      logger.cache.info(`Retrieved cached post data for ${post_id}`);
     } catch (e) {
       logger.cache.error(`Error parsing JSON for ${post_id}`, e);
     }
   } else {
-    logger.cache.debug(`No cached post data found for ${post_id}`);
+    logger.cache.info(`No cached post data found for ${post_id}`);
   }
   return cachedPost;
 }
@@ -625,9 +625,9 @@ async function getCachedComment(comment_id: string, context: TriggerContext): Pr
     return undefined;
   }
   if (cachedComment) {
-    logger.cache.debug(`Retrieved cached comment data for ${comment_id}`);
+    logger.cache.info(`Retrieved cached comment data for ${comment_id}`);
   } else {
-    logger.cache.debug(`No cached comment data found for ${comment_id}`);
+    logger.cache.info(`No cached comment data found for ${comment_id}`);
   }
   return cachedComment;
 }
@@ -683,7 +683,7 @@ async function getCachedModerators(context: TriggerContext): Promise<string[]> {
     return moderators;
   }
 
-  logger.modlist.debug("Cached modlist is empty or expired, refreshing...");
+  logger.modlist.info("Cached modlist is empty or expired, refreshing...");
   return await cacheModerators(context);
 }
 
@@ -828,7 +828,7 @@ async function getCachedModAction(
   try {
     const parsed = JSON.parse(raw) as Partial<CachedModAction>;
     if (typeof parsed.action === "string" && typeof parsed.moderator === "string") {
-      logger.cache.debug(`Retrieved cached mod action for ${targetId}: ${parsed.action} by ${parsed.moderator}`);
+      logger.cache.info(`Retrieved cached mod action for ${targetId}: ${parsed.action} by ${parsed.moderator}`);
       return {
         action: parsed.action,
         moderator: parsed.moderator,

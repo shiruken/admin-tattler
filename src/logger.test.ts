@@ -11,7 +11,7 @@ describe("logger", () => {
     const customLogger = createLogger("action");
 
     customLogger.debug("test debug message", { extra: 1 });
-    expect(debugSpy).toHaveBeenCalledWith("[action] test debug message", { extra: 1 });
+    expect(debugSpy).toHaveBeenCalledWith("[debug] [action] test debug message", { extra: 1 });
   });
 
   it("prefixes info logs and calls console.log", () => {

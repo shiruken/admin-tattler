@@ -9,8 +9,8 @@ export interface DomainLogger {
 
 /**
  * Creates a domain-prefixed logger mapping to standard console methods.
- * - debug -> console.debug (visible with devvit logs -v)
- * - info  -> console.log (visible in default devvit logs)
+ * - debug -> console.debug with `[debug]` tag (easily filtered via `grep -v '\[debug\]'`)
+ * - info  -> console.log
  * - warn  -> console.warn
  * - error -> console.error
  *
@@ -20,7 +20,7 @@ export interface DomainLogger {
 export function createLogger(domain: LogDomain): DomainLogger {
   const prefix = `[${domain}]`;
   return {
-    debug: (message: string, ...args: unknown[]) => console.debug(`${prefix} ${message}`, ...args),
+    debug: (message: string, ...args: unknown[]) => console.debug(`[debug] ${prefix} ${message}`, ...args),
     info: (message: string, ...args: unknown[]) => console.log(`${prefix} ${message}`, ...args),
     warn: (message: string, ...args: unknown[]) => console.warn(`${prefix} ${message}`, ...args),
     error: (message: string, ...args: unknown[]) => console.error(`${prefix} ${message}`, ...args),
