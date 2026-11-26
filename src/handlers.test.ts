@@ -2564,7 +2564,29 @@ describe("handlers", () => {
       const slackCall = fetchMock.mock.calls[0];
       expect(slackCall[1].headers).toEqual({ "Content-Type": "application/json" });
       const slackBody = JSON.parse(slackCall[1].body);
-      expect(slackBody.attachments[0].blocks[0].elements[0].text.length).toBeLessThanOrEqual(3000);
+      expect(slackBody.text).toBe("Anti-Evil Operations has performed an action in r/testsub");
+      const slackText = slackBody.attachments[0].blocks[0].elements[0].text as string;
+      expect(slackText.length).toBeLessThanOrEqual(3000);
+      expect(slackText.endsWith(" [Truncated]")).toBe(true);
+
+      // Slack with a 2700-char body and short header fits within 3000 chars without truncating
+      await checkModAction(
+        {
+          id: "ModAction_slack_full_budget",
+          action: "removecomment",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: {
+            id: "t1_slack_2700",
+            body: "C".repeat(2700),
+          },
+        } as unknown as ModAction,
+        makeContext("https://hooks.slack.com/services/T00/B00/X")
+      );
+      const slackFullBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+      const slackFullText = slackFullBody.attachments[0].blocks[0].elements[0].text as string;
+      expect(slackFullText.length).toBeGreaterThan(2700);
+      expect(slackFullText).not.toContain("[Truncated]");
 
       // Discord
       await checkModAction(
@@ -2582,9 +2604,51 @@ describe("handlers", () => {
         } as unknown as ModAction,
         makeContext("https://discord.com/api/webhooks/123/xyz")
       );
-      const discordBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+      const discordBody = JSON.parse(fetchMock.mock.calls[2][1].body);
+      expect(discordBody.allowed_mentions).toEqual({ parse: [] });
       const urlField = discordBody.embeds[0].fields.find((f: { name: string }) => f.name === "URL");
       expect(urlField.value.length).toBe(1024);
+      const bodyField = discordBody.embeds[0].fields.find((f: { name: string }) => f.name === "Body");
+      expect(bodyField.value.length).toBeLessThanOrEqual(1024);
+      expect(bodyField.value.endsWith(" [Truncated]")).toBe(true);
+      const modlogField = discordBody.embeds[0].fields.find((f: { name: string }) => f.name === "Modlog");
+      expect(modlogField).toEqual({
+        name: "Modlog",
+        value: "[View Admin Modlog](https://www.reddit.com/mod/testsub/log?moderatorNames=a)",
+      });
+
+      // Modmail body > 9000 chars appends " [Truncated]"
+      const createModInboxConversation = vi.fn().mockResolvedValue("conv_long_modmail");
+      await checkModAction(
+        {
+          id: "ModAction_modmail_cap",
+          action: "removecomment",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: {
+            id: "t1_modmail_long",
+            body: "M".repeat(9500),
+          },
+        } as unknown as ModAction,
+        {
+          settings: {
+            getAll: vi.fn().mockResolvedValue({
+              sendModmail: true,
+              webhookURL: "",
+              excludeContext: false,
+              addModNote: false,
+            }),
+          },
+          redis: {
+            get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
+            set: vi.fn().mockResolvedValue("OK"),
+          },
+          reddit: {
+            modMail: { createModInboxConversation },
+          },
+        } as unknown as TriggerContext
+      );
+      expect(createModInboxConversation.mock.calls[0][0].bodyMarkdown).toContain(" [Truncated]");
     });
 
     it("continues to alert if cacheModerators fails during a modlist change action by an Admin", async () => {
@@ -4191,6 +4255,8 @@ describe("handlers", () => {
       );
       const getBannedUsersMock = mockContext.reddit.getBannedUsers as ReturnType<typeof vi.fn>;
       getBannedUsersMock.mockClear();
+      fetchMock.mockClear();
+      const modmailCallsBeforeDeleted = createModInboxConversation.mock.calls.length;
       await checkModAction(
         {
           id: "ModAction_cnt_deleted",
@@ -4204,6 +4270,17 @@ describe("handlers", () => {
       );
       expect(getBannedUsersMock).not.toHaveBeenCalled();
       expect(zAdd).not.toHaveBeenCalled();
+      expect(createModInboxConversation.mock.calls[modmailCallsBeforeDeleted][0].bodyMarkdown).toContain(
+        "* **Target User:** [deleted]\n"
+      );
+      const slackDeletedBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(slackDeletedBody.attachments[0].blocks[0].elements[0].text).toContain("*Target User:* [deleted]\n");
+      expect(slackDeletedBody.attachments[0].blocks[0].elements[0].text).not.toContain("/user/[deleted]");
+      const discordDeletedBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+      expect(discordDeletedBody.embeds[0].fields).toContainEqual({
+        name: "Target User",
+        value: "[deleted]",
+      });
       expect(zRem).not.toHaveBeenCalled();
       expect(zCard).not.toHaveBeenCalled();
 

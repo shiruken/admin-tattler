@@ -14,6 +14,7 @@ const POST_MOD_ACTIONS = new Set(["removelink", "spamlink", "approvelink"]);
 const REMOVAL_MOD_ACTIONS = new Set(["removecomment", "spamcomment", "removelink", "spamlink"]);
 const REMOVED_BY_REDDIT_REGEX = /^\[\s*removed by reddit\s*\]$/i;
 const REDACTED_CONTENT_REGEX = /^\[\s*(?:deleted|removed)\s*\]$/i;
+const TRUNCATION_SUFFIX = " [Truncated]";
 
 /**
  * Checks ModAction for Admins
@@ -344,6 +345,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     if (adminRemovalCount >= 2) {
       userBadges.push(`${adminRemovalCount} Admin removals`);
     }
+    const isDeletedUser = user.toLowerCase() === "[deleted]";
     const targetUserNote = userBadges.length ? ` (${userBadges.join(", ")})` : "";
     const bodyLabel = `${targetComment?.id ? "Comment" : "Body"}${ usedCachedBody ? " (Cached)" : "" }`;
 
@@ -352,7 +354,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       let msg = `**${modDisplayName}** has performed an action in r/${subredditName}:\n\n` +
                 `* **Action:** \`${action}\`${priorModActionNote}` +
                 (permalink ? `\n* **Permalink:** ${permalink}` : "") +
-                (user ? `\n* **Target User:** u/${user}${targetUserNote}` : "") +
+                (user ? `\n* **Target User:** ${isDeletedUser ? "[deleted]" : `u/${user}`}${targetUserNote}` : "") +
                 (url ? `\n* **URL${ usedCachedURL ? " (Cached)" : "" }:** ${url}` : "");
 
       if (!settings.excludeContext && title) {
@@ -363,7 +365,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         if (body.startsWith("[ Removed by Reddit ]") || isRedactedContent(body)) {
           msg += `\n* **${bodyLabel}:** ${body}`;
         } else {
-          msg += `\n* **${bodyLabel}:**\n${quoteText(body.slice(0, 9000))}`;
+          msg += `\n* **${bodyLabel}:**\n${quoteText(truncateText(body, 9000))}`;
         }
       }
 
@@ -426,16 +428,17 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     // Send to Slack
     const slackURLs = webhookURLs.filter((u) => u.startsWith("https://hooks.slack.com/"));
     if (slackURLs.length > 0) {
-      const slackContextText = (
+      const slackRawText =
         `*Action:* \`${action}\`${priorModActionNote}` +
         (permalink ? `\n*Permalink:* ${permalink}` : "") +
-        (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>${targetUserNote}` : "") +
+        (user ? `\n*Target User:* ${isDeletedUser ? "[deleted]" : `<https://www.reddit.com/user/${user}|u/${user}>`}${targetUserNote}` : "") +
         (url ? `\n*URL${ usedCachedURL ? " (Cached)" : "" }:* ${url}` : "") +
         (!settings.excludeContext && title ? `\n*Title${ usedCachedTitle ? " (Cached)" : "" }:* ${title}` : "") +
-        (!settings.excludeContext && body ? `\n*${bodyLabel}:* ${body.slice(0, 2500)}` : "")
-      ).slice(0, 3000);
+        (!settings.excludeContext && body ? `\n*${bodyLabel}:* ${body}` : "");
+      const slackContextText = truncateText(slackRawText, 3000);
 
       const slackPayload = {
+        text: `${modDisplayName} has performed an action in r/${subredditName}`,
         blocks: [
           {
             type: "section",
@@ -501,6 +504,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         username: "Admin Tattler",
         avatar_url: "https://raw.githubusercontent.com/shiruken/admin-tattler/main/assets/icon.png",
         content: `**${modDisplayName}** has performed an action in r/${subredditName}`,
+        allowed_mentions: { parse: [] },
         embeds: [
           {
             color: 16729344, // #FF4500 (OrangeRed)
@@ -524,7 +528,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       if (user) {
         discordPayload.embeds[0].fields.push({
           name: "Target User",
-          value: `[u/${user}](https://www.reddit.com/user/${user})${targetUserNote}`
+          value: `${isDeletedUser ? "[deleted]" : `[u/${user}](https://www.reddit.com/user/${user})`}${targetUserNote}`
         });
       }
 
@@ -545,13 +549,13 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       if (!settings.excludeContext && body) {
         discordPayload.embeds[0].fields.push({
           name: bodyLabel,
-          value: body.slice(0, 1024)
+          value: truncateText(body, 1024)
         });
       }
 
       discordPayload.embeds[0].fields.push({
-        name: modlogLinkDesc,
-        value: `[Link](${modlogLink})`
+        name: "Modlog",
+        value: `[${modlogLinkDesc}](${modlogLink})`
       });
 
       const discordBody = JSON.stringify(discordPayload);
@@ -911,6 +915,19 @@ function quoteText(text: string): string {
     .split("\n")
     .map((line) => (line.length ? `  > ${line}` : "  >"))
     .join("\n");
+}
+
+/**
+ * Truncate text to fit within maxLength, appending an explicit truncation notice when shortened
+ * @param text The string to truncate
+ * @param maxLength Maximum allowed string length
+ * @returns Original string if within limit, or truncated string ending with " [Truncated]"
+ */
+function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return text.slice(0, maxLength - TRUNCATION_SUFFIX.length).trimEnd() + TRUNCATION_SUFFIX;
 }
 
 /**
