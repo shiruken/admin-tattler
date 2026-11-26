@@ -460,6 +460,7 @@ describe("handlers", () => {
         },
         reddit: {
           getCurrentSubreddit: vi.fn().mockRejectedValue(new Error("Rate limit")),
+          getModerators: vi.fn().mockReturnValue({ all: vi.fn().mockResolvedValue([]) }),
           modMail: { createModInboxConversation },
         },
       } as unknown as TriggerContext;
@@ -3773,6 +3774,170 @@ describe("handlers", () => {
       );
 
       warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
+
+    it("falls back to single-user moderator lookup when full modlist refresh fails and keeps alerting on known Admins", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const createModInboxConversation = vi.fn().mockResolvedValue("conv_fallback");
+      const redisSet = vi.fn().mockResolvedValue("OK");
+
+      // 1. Live refresh fails on a newly added local mod -> single-user lookup confirms mod -> skipped + modaction cached
+      const getModeratorsMatch = vi.fn().mockReturnValue({
+        all: vi.fn().mockResolvedValue([{ username: "NewlyAddedMod" }]),
+      });
+      await checkModAction(
+        {
+          id: "ModAction_fallback_mod",
+          action: "removecomment",
+          moderator: { name: "newlyaddedmod" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_fb_mod", body: "Comment" },
+        } as unknown as ModAction,
+        {
+          settings: { getAll: vi.fn().mockResolvedValue(baseSettings) },
+          redis: {
+            get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "existing_mod" : undefined)),
+            set: redisSet,
+          },
+          reddit: {
+            getCurrentSubreddit: vi.fn().mockRejectedValue(new Error("User data is missing from response")),
+            getModerators: getModeratorsMatch,
+            modMail: { createModInboxConversation },
+          },
+        } as unknown as TriggerContext
+      );
+      expect(getModeratorsMatch).toHaveBeenCalledWith({ subredditName: "testsub", username: "newlyaddedmod" });
+      expect(createModInboxConversation).not.toHaveBeenCalled();
+      expect(redisSet).toHaveBeenCalledWith(
+        "modaction:t1_fb_mod",
+        JSON.stringify({ action: "removecomment", moderator: "newlyaddedmod" }),
+        expect.objectContaining({ expiration: expect.any(Date) })
+      );
+
+      // 2. Empty/expired modlist cache + full refresh fails -> known Admin (AEO) still alerts without crashing
+      const getCurrentSubredditFail = vi.fn().mockRejectedValue(new Error("30s timeout"));
+      const getModeratorsUnused = vi.fn();
+      await checkModAction(
+        {
+          id: "ModAction_empty_cache_aeo",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_empty_aeo", title: "Removed Post" },
+        } as unknown as ModAction,
+        {
+          settings: { getAll: vi.fn().mockResolvedValue({ ...baseSettings, webhookURL: "", addModNote: false }) },
+          redis: {
+            get: vi.fn().mockResolvedValue(undefined),
+            set: vi.fn().mockResolvedValue("OK"),
+          },
+          reddit: {
+            getCurrentSubreddit: getCurrentSubredditFail,
+            getModerators: getModeratorsUnused,
+            modMail: { createModInboxConversation },
+          },
+        } as unknown as TriggerContext
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[modlist] Error refreshing empty or expired modlist cache",
+        expect.any(Error)
+      );
+      expect(getModeratorsUnused).not.toHaveBeenCalled();
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+
+      // 3. Empty/expired modlist cache + full refresh fails on a local mod -> skips second full refresh, confirms via single-user lookup
+      const getCurrentSubredditOnce = vi.fn().mockRejectedValue(new Error("30s timeout"));
+      const getModeratorsLocal = vi.fn().mockReturnValue({
+        all: vi.fn().mockResolvedValue([{ username: "localmod" }]),
+      });
+      await checkModAction(
+        {
+          id: "ModAction_empty_cache_local",
+          action: "removecomment",
+          moderator: { name: "localmod" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_empty_local", body: "Comment" },
+        } as unknown as ModAction,
+        {
+          settings: { getAll: vi.fn().mockResolvedValue(baseSettings) },
+          redis: {
+            get: vi.fn().mockResolvedValue(undefined),
+            set: vi.fn().mockResolvedValue("OK"),
+          },
+          reddit: {
+            getCurrentSubreddit: getCurrentSubredditOnce,
+            getModerators: getModeratorsLocal,
+            modMail: { createModInboxConversation },
+          },
+        } as unknown as TriggerContext
+      );
+      expect(getCurrentSubredditOnce).toHaveBeenCalledTimes(1);
+      expect(getModeratorsLocal).toHaveBeenCalledWith({ subredditName: "testsub", username: "localmod" });
+      expect(createModInboxConversation).toHaveBeenCalledTimes(1);
+
+      // 4. addmoderator when full refresh fails AND Redis mods cache is empty -> skips redundant getCurrentSubreddit, fails open if single-user lookup also throws
+      const getCurrentSubredditAddMod = vi.fn().mockRejectedValue(new Error("API 500"));
+      const getModeratorsErr = vi.fn().mockReturnValue({
+        all: vi.fn().mockRejectedValue(new Error("Single lookup 503")),
+      });
+      await checkModAction(
+        {
+          id: "ModAction_addmod_double_fail",
+          action: "addmoderator",
+          moderator: { name: "named_admin" },
+          targetUser: { name: "someone" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+        } as unknown as ModAction,
+        {
+          settings: { getAll: vi.fn().mockResolvedValue({ ...baseSettings, webhookURL: "", addModNote: false }) },
+          redis: {
+            get: vi.fn().mockResolvedValue(undefined),
+            set: vi.fn().mockResolvedValue("OK"),
+          },
+          reddit: {
+            getCurrentSubreddit: getCurrentSubredditAddMod,
+            getModerators: getModeratorsErr,
+            getBannedUsers: vi.fn().mockResolvedValue({ all: vi.fn().mockResolvedValue([]) }),
+            modMail: { createModInboxConversation },
+          },
+        } as unknown as TriggerContext
+      );
+      expect(getCurrentSubredditAddMod).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[action] Error verifying moderator status for u/named_admin via single-user lookup",
+        expect.any(Error)
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(2);
+
+      // 5. Empty/expired modlist cache + full refresh succeeds for a named Admin -> does not trigger a redundant second refresh
+      const getCurrentSubredditOk = vi.fn().mockResolvedValue({
+        name: "testsub",
+        getModerators: vi.fn().mockReturnValue((async function* () { yield { username: "localmod" }; })()),
+      });
+      await checkModAction(
+        {
+          id: "ModAction_empty_cache_named_admin",
+          action: "removelink",
+          moderator: { name: "spez" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_spez_post", title: "Post" },
+        } as unknown as ModAction,
+        {
+          settings: { getAll: vi.fn().mockResolvedValue({ ...baseSettings, webhookURL: "", addModNote: false }) },
+          redis: {
+            get: vi.fn().mockResolvedValue(undefined),
+            set: vi.fn().mockResolvedValue("OK"),
+          },
+          reddit: {
+            getCurrentSubreddit: getCurrentSubredditOk,
+            modMail: { createModInboxConversation },
+          },
+        } as unknown as TriggerContext
+      );
+      expect(getCurrentSubredditOk).toHaveBeenCalledTimes(1);
+      expect(createModInboxConversation).toHaveBeenCalledTimes(3);
+
       errorSpy.mockRestore();
     });
   });

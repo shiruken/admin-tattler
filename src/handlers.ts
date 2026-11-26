@@ -42,6 +42,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
   // Update cached modlist on modlist change
   let moderators: string[] | undefined;
   let didLiveRefresh = false;
+  let fullRefreshFailed = false;
   if (
     action == "acceptmoderatorinvite" || action == "addmoderator" ||
     action == "removemoderator" || action == "reordermoderators"
@@ -52,6 +53,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       didLiveRefresh = true;
     } catch (e) {
       logger.modlist.error(`Error updating cached modlist on ${action}`, e);
+      fullRefreshFailed = true;
     }
   }
 
@@ -82,7 +84,16 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     return;
   }
 
-  moderators ??= await getCachedModerators(context);
+  if (!moderators) {
+    const cachedResult = await getCachedModerators(context, fullRefreshFailed);
+    moderators = cachedResult.moderators;
+    if (cachedResult.refreshed) {
+      didLiveRefresh = true;
+    }
+    if (cachedResult.refreshFailed) {
+      fullRefreshFailed = true;
+    }
+  }
   let isMod = moderators.some((m) => m.toLowerCase() === modLower);
 
   // Check if acting moderator is NOT in modlist (or simulated admin during playtest)
@@ -107,17 +118,30 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     moderatorName != "Reddit Legal" &&
     moderatorName != "[ Redacted ]"
   ) {
-    logger.action.info(`u/${moderatorName} not found in cached modlist, performing live refresh to verify`);
-    try {
-      moderators = await cacheModerators(context);
-      isMod = moderators.some((m) => m.toLowerCase() === modLower);
+    if (!fullRefreshFailed) {
+      logger.action.info(`u/${moderatorName} not found in cached modlist, performing live refresh to verify`);
+      try {
+        moderators = await cacheModerators(context);
+        isMod = moderators.some((m) => m.toLowerCase() === modLower);
+        if (isMod) {
+          await cacheModAction(event, context);
+          logger.action.info(`u/${moderatorName} confirmed as moderator after live refresh; skipping`);
+          return;
+        }
+      } catch (e) {
+        logger.action.error("Error performing live modlist refresh", e);
+        fullRefreshFailed = true;
+      }
+    }
+
+    if (fullRefreshFailed) {
+      logger.action.info(`Falling back to single-user moderator lookup for u/${moderatorName}`);
+      isMod = await isModeratorViaSingleLookup(subredditName, moderatorName, context);
       if (isMod) {
         await cacheModAction(event, context);
-        logger.action.info(`u/${moderatorName} confirmed as moderator after live refresh; skipping`);
+        logger.action.info(`u/${moderatorName} confirmed as moderator via single-user lookup; skipping`);
         return;
       }
-    } catch (e) {
-      logger.action.error("Error performing live modlist refresh", e);
     }
   }
 
@@ -738,12 +762,22 @@ export async function cacheModerators(context: TriggerContext): Promise<string[]
   return moderators;
 }
 
+type CachedModeratorsResult = {
+  moderators: string[];
+  refreshed: boolean;
+  refreshFailed: boolean;
+};
+
 /**
  * Get cached subreddit modlist, automatically refreshing if expired or missing
  * @param context A TriggerContext object
- * @returns A promise that resolves to an array of moderator usernames
+ * @param skipRefresh If true, do not attempt a full refresh when cache is empty (e.g. already failed on this event)
+ * @returns A promise that resolves to cached moderators and refresh status
  */
-async function getCachedModerators(context: TriggerContext): Promise<string[]> {
+async function getCachedModerators(
+  context: TriggerContext,
+  skipRefresh = false
+): Promise<CachedModeratorsResult> {
   let cached: string | undefined;
   try {
     cached = await context.redis.get("mods");
@@ -753,11 +787,45 @@ async function getCachedModerators(context: TriggerContext): Promise<string[]> {
   if (cached) {
     const moderators = cached.split(","); // Parse string representation of array
     logger.modlist.debug(`Retrieved ${moderators.length} cached moderators`);
-    return moderators;
+    return { moderators, refreshed: false, refreshFailed: false };
+  }
+
+  if (skipRefresh) {
+    return { moderators: [], refreshed: false, refreshFailed: true };
   }
 
   logger.modlist.info("Cached modlist is empty or expired, refreshing...");
-  return await cacheModerators(context);
+  try {
+    const moderators = await cacheModerators(context);
+    return { moderators, refreshed: true, refreshFailed: false };
+  } catch (e) {
+    logger.modlist.error("Error refreshing empty or expired modlist cache", e);
+    return { moderators: [], refreshed: false, refreshFailed: true };
+  }
+}
+
+/**
+ * Check whether a single user is a moderator of the subreddit via a targeted API lookup (O(1)).
+ * Used as a read-only fallback when a full modlist refresh fails.
+ * @param subredditName The subreddit name (without r/ prefix)
+ * @param username The username to verify
+ * @param context A TriggerContext object
+ * @returns True if the user is confirmed as a moderator, false otherwise
+ */
+async function isModeratorViaSingleLookup(
+  subredditName: string,
+  username: string,
+  context: TriggerContext
+): Promise<boolean> {
+  try {
+    const matches = await context.reddit
+      .getModerators({ subredditName, username })
+      .all();
+    return matches.some((m) => m.username.toLowerCase() === username.toLowerCase());
+  } catch (e) {
+    logger.action.error(`Error verifying moderator status for u/${username} via single-user lookup`, e);
+    return false;
+  }
 }
 
 /**
