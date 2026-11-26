@@ -11,6 +11,7 @@ const RETRY_DELAY_MS = 1000; // 1 second
 const DEDUP_CACHE_TTL_SECONDS = 60*60*24; // 24 hours (1 day)
 const COMMENT_MOD_ACTIONS = new Set(["removecomment", "spamcomment", "approvecomment"]);
 const POST_MOD_ACTIONS = new Set(["removelink", "spamlink", "approvelink"]);
+const REMOVAL_MOD_ACTIONS = new Set(["removecomment", "spamcomment", "removelink", "spamlink"]);
 const REMOVED_BY_REDDIT_REGEX = /^\[\s*removed by reddit\s*\]$/i;
 const REDACTED_CONTENT_REGEX = /^\[\s*(?:deleted|removed)\s*\]$/i;
 
@@ -325,12 +326,32 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       }
     }
 
+    let adminRemovalCount = 0;
+    if (user && contentTargetId) {
+      adminRemovalCount = await updateAdminRemovalCount(
+        user,
+        action,
+        contentTargetId,
+        event.actionedAt,
+        context
+      );
+    }
+
+    const userBadges: string[] = [];
+    if (is_banned) {
+      userBadges.push(`Banned in r/${subredditName}`);
+    }
+    if (adminRemovalCount >= 2) {
+      userBadges.push(`${adminRemovalCount} Admin removals`);
+    }
+    const targetUserNote = userBadges.length ? ` (${userBadges.join(", ")})` : "";
+
     // Send Modmail
     if (settings.sendModmail) {
       let msg = `**${modDisplayName}** has performed an action in r/${subredditName}:\n\n` +
                 `* **Action:** \`${action}\`${priorModActionNote}` +
                 (permalink ? `\n* **Permalink:** ${permalink}` : "") +
-                (user ? `\n* **Target User:** u/${user}${ is_banned ? ` (Banned in r/${subredditName})`: "" }` : "") +
+                (user ? `\n* **Target User:** u/${user}${targetUserNote}` : "") +
                 (url ? `\n* **URL${ usedCachedURL ? " (Cached)" : "" }:** ${url}` : "");
 
       if (!settings.excludeContext && title) {
@@ -408,7 +429,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       const slackContextText = (
         `*Action:* \`${action}\`${priorModActionNote}` +
         (permalink ? `\n*Permalink:* ${permalink}` : "") +
-        (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>${ is_banned ? ` (Banned in r/${subredditName})`: "" }` : "") +
+        (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>${targetUserNote}` : "") +
         (url ? `\n*URL${ usedCachedURL ? " (Cached)" : "" }:* ${url}` : "") +
         (!settings.excludeContext && title ? `\n*Title${ usedCachedTitle ? " (Cached)" : "" }:* ${title}` : "") +
         (!settings.excludeContext && body ? `\n*Body${ usedCachedBody ? " (Cached)" : "" }:* ${body.slice(0, 2500)}` : "")
@@ -503,7 +524,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       if (user) {
         discordPayload.embeds[0].fields.push({
           name: "Target User",
-          value: `[u/${user}](https://www.reddit.com/user/${user})${ is_banned ? ` (Banned in r/${subredditName})`: "" }`
+          value: `[u/${user}](https://www.reddit.com/user/${user})${targetUserNote}`
         });
       }
 
@@ -898,6 +919,48 @@ function quoteText(text: string): string {
  */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Update and return a user's all-time Admin content removal count in Redis.
+ * Adds targetId on content removals and removes targetId on content approvals (reversals).
+ * @param user Target username
+ * @param action Content removal or approval ModAction string
+ * @param targetId Target post (t3_) or comment (t1_) fullname
+ * @param actionedAt Optional event timestamp
+ * @param context A TriggerContext object
+ * @returns Total all-time Admin removal count for the user, or 0 on error/ignored user
+ */
+async function updateAdminRemovalCount(
+  user: string,
+  action: string,
+  targetId: string,
+  actionedAt: Date | undefined,
+  context: TriggerContext
+): Promise<number> {
+  const userLower = user.toLowerCase();
+  if (userLower === "automoderator" || userLower === "[deleted]") {
+    return 0;
+  }
+
+  const key = `admin_removals:${userLower}`;
+  const score = actionedAt instanceof Date ? actionedAt.getTime() : Date.now();
+
+  try {
+    if (REMOVAL_MOD_ACTIONS.has(action)) {
+      await context.redis.zAdd(key, { member: targetId, score });
+      logger.cache.debug(`Recorded Admin removal ${targetId} in ${key}`);
+    } else {
+      const removed = await context.redis.zRem(key, [targetId]);
+      if (removed > 0) {
+        logger.cache.info(`Removed reversed Admin removal ${targetId} from ${key}`);
+      }
+    }
+    return await context.redis.zCard(key);
+  } catch (e) {
+    logger.cache.error(`Error updating Admin removal count for ${key}`, e);
+    return 0;
+  }
 }
 
 /**

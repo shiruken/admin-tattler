@@ -825,6 +825,8 @@ describe("handlers", () => {
           }),
           set: vi.fn().mockResolvedValue("OK"),
           expire: vi.fn().mockResolvedValue(1),
+          zAdd: vi.fn().mockResolvedValue(1),
+          zCard: vi.fn().mockResolvedValue(1),
         },
         reddit: {
           getCurrentSubreddit: vi.fn().mockResolvedValue({
@@ -911,6 +913,8 @@ describe("handlers", () => {
           }),
           set: vi.fn().mockResolvedValue("OK"),
           expire: vi.fn().mockResolvedValue(1),
+          zAdd: vi.fn().mockResolvedValue(1),
+          zCard: vi.fn().mockResolvedValue(1),
         },
         reddit: {
           getCurrentSubreddit: vi.fn().mockResolvedValue({
@@ -1146,6 +1150,8 @@ describe("handlers", () => {
           get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
           set: vi.fn().mockResolvedValue("OK"),
           expire: vi.fn().mockResolvedValue(1),
+          zAdd: vi.fn().mockResolvedValue(1),
+          zCard: vi.fn().mockResolvedValue(1),
         },
         reddit: {
           getCurrentSubreddit: vi.fn().mockResolvedValue({
@@ -2063,6 +2069,8 @@ describe("handlers", () => {
             return Promise.resolve(null);
           }),
           set: redisSet,
+          zAdd: vi.fn().mockResolvedValue(1),
+          zCard: vi.fn().mockResolvedValue(1),
         },
         reddit: {
           getCurrentSubreddit: vi.fn().mockResolvedValue({
@@ -3106,6 +3114,8 @@ describe("handlers", () => {
         redis: {
           get: redisGet,
           set: redisSet,
+          zAdd: vi.fn().mockResolvedValue(1),
+          zCard: vi.fn().mockResolvedValue(1),
         },
         reddit: {
           modMail: {
@@ -3423,6 +3433,8 @@ describe("handlers", () => {
         redis: {
           get: vi.fn().mockImplementation(async (key: string) => (key === "mods" ? "localmod" : undefined)),
           set: vi.fn().mockResolvedValue("OK"),
+          zRem: vi.fn().mockResolvedValue(0),
+          zCard: vi.fn().mockResolvedValue(0),
         },
         reddit: {
           getBannedUsers: vi.fn().mockResolvedValue({ all: vi.fn().mockResolvedValue([]) }),
@@ -3938,6 +3950,293 @@ describe("handlers", () => {
       expect(getCurrentSubredditOk).toHaveBeenCalledTimes(1);
       expect(createModInboxConversation).toHaveBeenCalledTimes(3);
 
+      errorSpy.mockRestore();
+    });
+
+    it("tracks all-time Admin content removal counts per user, handles reversals, and formats badges across channels", async () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const zsets = new Map<string, Map<string, number>>();
+      const zAdd = vi.fn().mockImplementation(async (key: string, ...members: Array<{ member: string; score: number }>) => {
+        let set = zsets.get(key);
+        if (!set) {
+          set = new Map();
+          zsets.set(key, set);
+        }
+        let added = 0;
+        for (const m of members) {
+          if (!set.has(m.member)) added++;
+          set.set(m.member, m.score);
+        }
+        return added;
+      });
+      const zRem = vi.fn().mockImplementation(async (key: string, members: string[]) => {
+        const set = zsets.get(key);
+        if (!set) return 0;
+        let removed = 0;
+        for (const m of members) {
+          if (set.delete(m)) removed++;
+        }
+        return removed;
+      });
+      const zCard = vi.fn().mockImplementation(async (key: string) => zsets.get(key)?.size ?? 0);
+
+      const store = new Map<string, string>([["mods", "localmod"]]);
+      const createModInboxConversation = vi.fn().mockResolvedValue("conv_count");
+      const reply = vi.fn().mockResolvedValue({});
+      const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      let isBanned = false;
+      const mockContext = {
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: true,
+            modmailNotification: false,
+            archiveModmail: false,
+            webhookURL: "https://hooks.slack.com/services/T1/B1/X, https://discord.com/api/webhooks/1/a",
+            excludeContext: false,
+            addModNote: false,
+          }),
+        },
+        redis: {
+          get: vi.fn().mockImplementation(async (key: string) => store.get(key)),
+          set: vi.fn().mockImplementation(async (key: string, value: string, opts?: { nx?: boolean }) => {
+            if (opts?.nx && store.has(key)) return undefined;
+            store.set(key, value);
+            return "OK";
+          }),
+          zAdd,
+          zRem,
+          zCard,
+        },
+        reddit: {
+          getBannedUsers: vi.fn().mockImplementation(async () => ({
+            all: vi.fn().mockResolvedValue(isBanned ? [{ username: "repeatuser" }] : []),
+          })),
+          modMail: { createModInboxConversation, reply },
+        },
+      } as unknown as TriggerContext;
+
+      // 1. 1st removal -> recorded in admin_removals:repeatuser, count = 1 -> omitted from notifications
+      await checkModAction(
+        {
+          id: "ModAction_cnt_1",
+          action: "removecomment",
+          actionedAt: new Date("2026-11-26T10:00:00.000Z"),
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_cnt1", body: "First bad comment" },
+          targetUser: { name: "RepeatUser" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(zAdd).toHaveBeenCalledWith("admin_removals:repeatuser", {
+        member: "t1_cnt1",
+        score: new Date("2026-11-26T10:00:00.000Z").getTime(),
+      });
+      expect(createModInboxConversation.mock.calls[0][0].bodyMarkdown).toContain("* **Target User:** u/RepeatUser\n");
+      expect(createModInboxConversation.mock.calls[0][0].bodyMarkdown).not.toContain("Admin removal");
+
+      // 2. 2nd removal (different casing, not banned) -> count = 2 -> "(2 Admin removals)" across Modmail, Slack, Discord
+      fetchMock.mockClear();
+      await checkModAction(
+        {
+          id: "ModAction_cnt_2",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_cnt2", title: "Second bad post" },
+          targetUser: { name: "repeatuser" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(createModInboxConversation.mock.calls[1][0].bodyMarkdown).toContain(
+        "* **Target User:** u/repeatuser (2 Admin removals)"
+      );
+      const slackBody2 = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(slackBody2.attachments[0].blocks[0].elements[0].text).toContain(
+        "*Target User:* <https://www.reddit.com/user/repeatuser|u/repeatuser> (2 Admin removals)"
+      );
+      const discordBody2 = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+      expect(discordBody2.embeds[0].fields).toContainEqual({
+        name: "Target User",
+        value: "[u/repeatuser](https://www.reddit.com/user/repeatuser) (2 Admin removals)",
+      });
+
+      // 3. Duplicate removal on same t3_cnt2 -> deduplicated in sorted set, stays at 2
+      await checkModAction(
+        {
+          id: "ModAction_cnt_2_dup",
+          action: "removelink",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_cnt2", title: "Second bad post" },
+          targetUser: { name: "repeatuser" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(zsets.get("admin_removals:repeatuser")?.size).toBe(2);
+
+      // 4. 3rd removal when user IS banned -> "(Banned in r/testsub, 3 Admin removals)" across all channels
+      isBanned = true;
+      fetchMock.mockClear();
+      await checkModAction(
+        {
+          id: "ModAction_cnt_3",
+          action: "spamcomment",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_cnt3", body: "Third bad comment" },
+          targetUser: { name: "repeatuser" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(createModInboxConversation.mock.calls[2][0].bodyMarkdown).toContain(
+        "* **Target User:** u/repeatuser (Banned in r/testsub, 3 Admin removals)"
+      );
+      const slackBody3 = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(slackBody3.attachments[0].blocks[0].elements[0].text).toContain(
+        "*Target User:* <https://www.reddit.com/user/repeatuser|u/repeatuser> (Banned in r/testsub, 3 Admin removals)"
+      );
+      const discordBody3 = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+      expect(discordBody3.embeds[0].fields).toContainEqual({
+        name: "Target User",
+        value: "[u/repeatuser](https://www.reddit.com/user/repeatuser) (Banned in r/testsub, 3 Admin removals)",
+      });
+
+      // 5. Reversal (approvecomment on t1_cnt3) -> zRem subtracts to 2, logs removal, shows 2 Admin removals
+      reply.mockClear();
+      await checkModAction(
+        {
+          id: "ModAction_cnt_rev1",
+          action: "approvecomment",
+          moderator: { name: "Reddit Legal" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_cnt3", body: "Restored comment" },
+          targetUser: { name: "repeatuser" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(logSpy).toHaveBeenCalledWith(
+        "[cache] Removed reversed Admin removal t1_cnt3 from admin_removals:repeatuser"
+      );
+      expect(reply.mock.calls[0][0].body).toContain(
+        "* **Target User:** u/repeatuser (Banned in r/testsub, 2 Admin removals)"
+      );
+
+      // 6. Second reversal (approvelink on t3_cnt2) -> drops to 1 -> count omitted, keeps Banned badge
+      reply.mockClear();
+      await checkModAction(
+        {
+          id: "ModAction_cnt_rev2",
+          action: "approvelink",
+          moderator: { name: "Reddit Legal" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_cnt2", title: "Restored post" },
+          targetUser: { name: "repeatuser" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(reply.mock.calls[0][0].body).toContain(
+        "* **Target User:** u/repeatuser (Banned in r/testsub)\n"
+      );
+      expect(reply.mock.calls[0][0].body).not.toContain("Admin removals");
+
+      // 7. Reversal on an untracked item -> zRem returns 0, no removal log
+      logSpy.mockClear();
+      await checkModAction(
+        {
+          id: "ModAction_cnt_rev_untracked",
+          action: "approvecomment",
+          moderator: { name: "Reddit Legal" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_untracked", body: "Old restored comment" },
+          targetUser: { name: "repeatuser" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining("Removed reversed Admin removal"));
+
+      // 8. Non-content action (lock) & ignored users (AutoModerator, [deleted]) -> skip Redis sorted set ops
+      zAdd.mockClear();
+      zRem.mockClear();
+      zCard.mockClear();
+      await checkModAction(
+        {
+          id: "ModAction_cnt_lock",
+          action: "lock",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetPost: { id: "t3_lock_cnt", title: "Locked" },
+          targetUser: { name: "repeatuser" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      await checkModAction(
+        {
+          id: "ModAction_cnt_automod",
+          action: "removecomment",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_automod_cnt", body: "AutoMod" },
+          targetUser: { name: "AutoModerator" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      await checkModAction(
+        {
+          id: "ModAction_cnt_deleted",
+          action: "removecomment",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_del_cnt", body: "Deleted" },
+          targetUser: { name: "[deleted]" },
+        } as unknown as ModAction,
+        mockContext
+      );
+      expect(zAdd).not.toHaveBeenCalled();
+      expect(zRem).not.toHaveBeenCalled();
+      expect(zCard).not.toHaveBeenCalled();
+
+      // 9. Redis error on zAdd -> logs error gracefully and still sends Modmail
+      const errContext = {
+        ...mockContext,
+        settings: {
+          getAll: vi.fn().mockResolvedValue({
+            sendModmail: true,
+            modmailNotification: false,
+            archiveModmail: false,
+            webhookURL: "",
+            excludeContext: false,
+            addModNote: false,
+          }),
+        },
+        redis: {
+          ...mockContext.redis,
+          zAdd: vi.fn().mockRejectedValue(new Error("RESOURCE_EXHAUSTED")),
+        },
+      } as unknown as TriggerContext;
+
+      const prevCalls = createModInboxConversation.mock.calls.length;
+      await checkModAction(
+        {
+          id: "ModAction_cnt_redis_err",
+          action: "removecomment",
+          moderator: { name: "Anti-Evil Operations" },
+          subreddit: { id: "t5_testsub", name: "testsub" },
+          targetComment: { id: "t1_cnt_err", body: "Test" },
+          targetUser: { name: "erruser" },
+        } as unknown as ModAction,
+        errContext
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[cache] Error updating Admin removal count for admin_removals:erruser",
+        expect.any(Error)
+      );
+      expect(createModInboxConversation).toHaveBeenCalledTimes(prevCalls + 1);
+
+      logSpy.mockRestore();
       errorSpy.mockRestore();
     });
   });
