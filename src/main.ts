@@ -34,7 +34,11 @@ Devvit.addTrigger({
   events: ['AppInstall', 'AppUpgrade'],
   onEvent: async (event, context) => {
     logger.app.info(`Updating cached modlist on ${event.type}`);
-    await cacheModerators(context);
+    try {
+      await cacheModerators(context);
+    } catch (e) {
+      logger.app.error(`Error updating cached modlist on ${event.type}`, e);
+    }
   },
 });
 

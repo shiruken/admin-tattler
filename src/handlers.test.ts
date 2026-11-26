@@ -210,6 +210,7 @@ describe("handlers", () => {
 
   describe("cacheModerators", () => {
     it("fetches moderator usernames and stores them in Redis with 24-hour expiration", async () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
       const redisSet = vi.fn().mockResolvedValue("OK");
       const mockModerators = [{ username: "mod1" }, { username: "mod2" }];
 
@@ -237,16 +238,23 @@ describe("handlers", () => {
       expect(redisSet).toHaveBeenCalledWith("mods", "mod1,mod2", {
         expiration: expect.any(Date),
       });
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/^\[modlist\] Wrote 2 moderators to Redis in \d+ms with 86400s TTL$/)
+      );
+      logSpy.mockRestore();
     });
 
-    it("throws when fetching moderators fails", async () => {
+    it("throws with elapsed time and fetched count when fetching moderators fails", async () => {
+      async function* partialFailGen() {
+        yield { username: "mod1" };
+        throw new Error("Network timeout");
+      }
+
       const mockContext = {
         reddit: {
           getCurrentSubreddit: vi.fn().mockResolvedValue({
             name: "testsubreddit",
-            getModerators: vi.fn().mockImplementation(() => {
-              throw new Error("Network timeout");
-            }),
+            getModerators: vi.fn().mockReturnValue(partialFailGen()),
           }),
         },
         redis: {
@@ -255,7 +263,7 @@ describe("handlers", () => {
       } as unknown as TriggerContext;
 
       await expect(cacheModerators(mockContext)).rejects.toThrow(
-        "Error fetching modlist for r/testsubreddit: Error: Network timeout"
+        /^Error fetching modlist for r\/testsubreddit after \d+ms \(1 fetched\): Error: Network timeout$/
       );
     });
 

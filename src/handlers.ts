@@ -704,6 +704,7 @@ async function getCachedComment(comment_id: string, context: TriggerContext): Pr
  * @returns A Promise that resolves to the array of moderator usernames
  */
 export async function cacheModerators(context: TriggerContext): Promise<string[]> {
+  const startTime = Date.now();
   const subreddit = await context.reddit.getCurrentSubreddit();
   const moderators: string[] = [];
   try {
@@ -711,7 +712,10 @@ export async function cacheModerators(context: TriggerContext): Promise<string[]
       moderators.push(moderator.username);
     }
   } catch (err) {
-    throw new Error(`Error fetching modlist for r/${subreddit.name}: ${err}`);
+    const elapsedMs = Date.now() - startTime;
+    throw new Error(
+      `Error fetching modlist for r/${subreddit.name} after ${elapsedMs}ms (${moderators.length} fetched): ${err}`
+    );
   }
 
   if (!moderators.length) {
@@ -723,7 +727,10 @@ export async function cacheModerators(context: TriggerContext): Promise<string[]
     await context.redis.set("mods", moderators.toString(), {
       expiration: new Date(Date.now() + MODERATOR_CACHE_TTL_SECONDS * 1000),
     });
-    logger.modlist.info(`Wrote ${moderators.length} moderators to Redis with ${MODERATOR_CACHE_TTL_SECONDS}s TTL`);
+    const elapsedMs = Date.now() - startTime;
+    logger.modlist.info(
+      `Wrote ${moderators.length} moderators to Redis in ${elapsedMs}ms with ${MODERATOR_CACHE_TTL_SECONDS}s TTL`
+    );
   } catch (e) {
     logger.modlist.error('Error writing moderators to Redis', e);
   }
