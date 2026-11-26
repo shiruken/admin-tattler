@@ -962,7 +962,7 @@ describe("handlers", () => {
         "https://hooks.slack.com/services/T00/B00/X",
         expect.objectContaining({
           method: "POST",
-          body: expect.stringContaining("Anti-Evil Operations"),
+          body: expect.stringContaining("*Comment (Cached):* Cached comment text from Redis"),
         })
       );
 
@@ -4099,10 +4099,15 @@ describe("handlers", () => {
       expect(slackBody3.attachments[0].blocks[0].elements[0].text).toContain(
         "*Target User:* <https://www.reddit.com/user/repeatuser|u/repeatuser> (Banned in r/testsub, 3 Admin removals)"
       );
+      expect(slackBody3.attachments[0].blocks[0].elements[0].text).toContain("*Comment:* Third bad comment");
       const discordBody3 = JSON.parse(fetchMock.mock.calls[1][1].body as string);
       expect(discordBody3.embeds[0].fields).toContainEqual({
         name: "Target User",
         value: "[u/repeatuser](https://www.reddit.com/user/repeatuser) (Banned in r/testsub, 3 Admin removals)",
+      });
+      expect(discordBody3.embeds[0].fields).toContainEqual({
+        name: "Comment",
+        value: "Third bad comment",
       });
 
       // 5. Reversal (approvecomment on t1_cnt3) -> zRem subtracts to 2, logs removal, shows 2 Admin removals
@@ -4184,6 +4189,8 @@ describe("handlers", () => {
         } as unknown as ModAction,
         mockContext
       );
+      const getBannedUsersMock = mockContext.reddit.getBannedUsers as ReturnType<typeof vi.fn>;
+      getBannedUsersMock.mockClear();
       await checkModAction(
         {
           id: "ModAction_cnt_deleted",
@@ -4195,6 +4202,7 @@ describe("handlers", () => {
         } as unknown as ModAction,
         mockContext
       );
+      expect(getBannedUsersMock).not.toHaveBeenCalled();
       expect(zAdd).not.toHaveBeenCalled();
       expect(zRem).not.toHaveBeenCalled();
       expect(zCard).not.toHaveBeenCalled();

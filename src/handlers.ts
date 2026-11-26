@@ -280,7 +280,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
     const targetUser = event.targetUser;
     if (targetUser && (targetUser.name || targetUser.id)) {
       user = targetUser.name || "";
-      if (user) {
+      if (user && user.toLowerCase() !== "[deleted]") {
         try {
           const listing = await context.reddit.getBannedUsers({
             subredditName: subredditName,
@@ -345,6 +345,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       userBadges.push(`${adminRemovalCount} Admin removals`);
     }
     const targetUserNote = userBadges.length ? ` (${userBadges.join(", ")})` : "";
+    const bodyLabel = `${targetComment?.id ? "Comment" : "Body"}${ usedCachedBody ? " (Cached)" : "" }`;
 
     // Send Modmail
     if (settings.sendModmail) {
@@ -359,7 +360,6 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
       }
 
       if (!settings.excludeContext && body) {
-        const bodyLabel = `${targetComment?.id ? "Comment" : "Body"}${ usedCachedBody ? " (Cached)" : "" }`;
         if (body.startsWith("[ Removed by Reddit ]") || isRedactedContent(body)) {
           msg += `\n* **${bodyLabel}:** ${body}`;
         } else {
@@ -432,7 +432,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
         (user ? `\n*Target User:* <https://www.reddit.com/user/${user}|u/${user}>${targetUserNote}` : "") +
         (url ? `\n*URL${ usedCachedURL ? " (Cached)" : "" }:* ${url}` : "") +
         (!settings.excludeContext && title ? `\n*Title${ usedCachedTitle ? " (Cached)" : "" }:* ${title}` : "") +
-        (!settings.excludeContext && body ? `\n*Body${ usedCachedBody ? " (Cached)" : "" }:* ${body.slice(0, 2500)}` : "")
+        (!settings.excludeContext && body ? `\n*${bodyLabel}:* ${body.slice(0, 2500)}` : "")
       ).slice(0, 3000);
 
       const slackPayload = {
@@ -544,7 +544,7 @@ export async function checkModAction(event: ModAction, context: TriggerContext) 
 
       if (!settings.excludeContext && body) {
         discordPayload.embeds[0].fields.push({
-          name: (usedCachedBody ? "Body (Cached)" : "Body"),
+          name: bodyLabel,
           value: body.slice(0, 1024)
         });
       }
